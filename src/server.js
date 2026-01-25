@@ -244,6 +244,16 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
     <label>Key / Token (if required)</label>
     <input id="authSecret" type="password" placeholder="Paste API key / token if applicable" />
 
+    <div id="customApiSection" style="display:none; margin-top: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 8px;">
+      <label>Custom API Base URL</label>
+      <input id="customBaseUrl" type="text" placeholder="https://api.example.com/anthropic" />
+      <div class="muted" style="margin-top: 0.25rem">Anthropic 兼容 API 的基础地址（不要加 /v1，Clawdbot 会自动追加）</div>
+
+      <label>Model Name</label>
+      <input id="customModel" type="text" placeholder="claude-3-5-sonnet / claude-3-opus" />
+      <div class="muted" style="margin-top: 0.25rem">要使用的模型名称</div>
+    </div>
+
     <label>Wizard flow</label>
     <select id="flow">
       <option value="quickstart">quickstart</option>
@@ -341,6 +351,9 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     ]},
     { value: "opencode-zen", label: "OpenCode Zen", hint: "API key", options: [
       { value: "opencode-zen", label: "OpenCode Zen (multi-model proxy)" }
+    ]},
+    { value: "custom-anthropic", label: "Custom Anthropic Compatible", hint: "自定义 Anthropic 端点", options: [
+      { value: "custom-anthropic-api", label: "自定义 Anthropic 兼容 API (需填写 BaseURL)" }
     ]}
   ];
 
@@ -404,6 +417,12 @@ function buildOnboardArgs(payload) {
       // This is the Anthropics setup-token flow.
       args.push("--token-provider", "anthropic", "--token", secret);
     }
+
+    // Handle custom Anthropic-compatible API - use synthetic as base auth, will configure custom provider after
+    if (payload.authChoice === "custom-anthropic-api") {
+      // Use synthetic-api-key as a placeholder for onboarding, we'll configure custom provider after
+      args.push("--synthetic-api-key", secret || "placeholder");
+    }
   }
 
   return args;
@@ -459,6 +478,50 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.auth.token", CLAWDBOT_GATEWAY_TOKEN]));
     await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
     await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+
+    // Configure custom Anthropic-compatible LLM provider if specified
+    if (payload.authChoice === "custom-anthropic-api") {
+      const baseUrl = payload.customBaseUrl?.trim();
+      const apiKey = payload.authSecret?.trim();
+      const model = payload.customModel?.trim();
+
+      if (baseUrl && apiKey) {
+        // Configure custom provider via models.providers
+        // Reference: https://github.com/clawdbot/clawdbot docs
+        const providerConfig = {
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          api: "anthropic-messages",
+          models: model ? [{
+            id: model,
+            name: model,
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 32000
+          }] : undefined
+        };
+
+        const providerSet = await runCmd(
+          CLAWDBOT_NODE,
+          clawArgs(["config", "set", "--json", "models.providers.custom", JSON.stringify(providerConfig)]),
+        );
+        extra += `\n[custom provider] exit=${providerSet.code}\n${providerSet.output || "(no output)"}`;
+
+        // Set the primary model to use the custom provider
+        if (model) {
+          const modelSet = await runCmd(
+            CLAWDBOT_NODE,
+            clawArgs(["config", "set", "agents.defaults.model.primary", `custom/${model}`]),
+          );
+          extra += `\n[custom model] exit=${modelSet.code}\n${modelSet.output || "(no output)"}`;
+        }
+
+        // Verify configuration
+        const verify = await runCmd(CLAWDBOT_NODE, clawArgs(["config", "get", "models.providers.custom"]));
+        extra += `\n[custom provider verify] exit=${verify.code}\n${verify.output || "(no output)"}`;
+      }
+    }
 
     const channelsHelp = await runCmd(CLAWDBOT_NODE, clawArgs(["channels", "add", "--help"]));
     const helpText = channelsHelp.output || "";

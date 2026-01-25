@@ -6,6 +6,14 @@
   var authGroupEl = document.getElementById('authGroup');
   var authChoiceEl = document.getElementById('authChoice');
   var logEl = document.getElementById('log');
+  var customApiSection = document.getElementById('customApiSection');
+
+  function updateCustomApiVisibility() {
+    var isCustom = authChoiceEl.value === 'custom-anthropic-api';
+    if (customApiSection) {
+      customApiSection.style.display = isCustom ? 'block' : 'none';
+    }
+  }
 
   function setStatus(s) {
     statusEl.textContent = s;
@@ -35,6 +43,11 @@
         opt2.textContent = o.label + (o.hint ? ' - ' + o.hint : '');
         authChoiceEl.appendChild(opt2);
       }
+      updateCustomApiVisibility();
+    };
+
+    authChoiceEl.onchange = function () {
+      updateCustomApiVisibility();
     };
 
     authGroupEl.onchange();
@@ -70,10 +83,14 @@
   }
 
   document.getElementById('run').onclick = function () {
+    var customBaseUrlEl = document.getElementById('customBaseUrl');
+    var customModelEl = document.getElementById('customModel');
     var payload = {
       flow: document.getElementById('flow').value,
       authChoice: authChoiceEl.value,
       authSecret: document.getElementById('authSecret').value,
+      customBaseUrl: customBaseUrlEl ? customBaseUrlEl.value : '',
+      customModel: customModelEl ? customModelEl.value : '',
       telegramToken: document.getElementById('telegramToken').value,
       discordToken: document.getElementById('discordToken').value,
       slackBotToken: document.getElementById('slackBotToken').value,
