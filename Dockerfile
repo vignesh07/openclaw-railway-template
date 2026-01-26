@@ -24,7 +24,7 @@ WORKDIR /clawdbot
 ARG CLAWDBOT_GIT_REF=main
 RUN git clone --depth 1 --branch "${CLAWDBOT_GIT_REF}" https://github.com/clawdbot/clawdbot.git .
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV CLAWDBOT_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
