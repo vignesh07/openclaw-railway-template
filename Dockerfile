@@ -55,4 +55,5 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /clawdbot/dist/entry.js "$@"'
 COPY src ./src
 
 EXPOSE 8080
-CMD ["node", "src/server.js"]
+CMD ["clawdbot"]
+
