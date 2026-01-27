@@ -3,14 +3,23 @@ FROM node:22-bookworm AS clawdbot-build
 
 # Dependencies needed for clawdbot build
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
     python3 \
     make \
     g++ \
-  && rm -rf /var/lib/apt/lists/*
+    golang \
+ && rm -rf /var/lib/apt/lists/*
+
+# Build gog (gogcli) from source
+RUN git clone --depth 1 https://github.com/steipete/gogcli.git /tmp/gogcli \
+ && cd /tmp/gogcli \
+ && make \
+ && install -m 0755 ./bin/gog /usr/local/bin/gog \
+ && rm -rf /tmp/gogcli
+
 
 # Install Bun (clawdbot build uses it)
 RUN curl -fsSL https://bun.sh/install | bash
@@ -41,6 +50,12 @@ RUN pnpm ui:install && pnpm ui:build
 # Runtime image
 FROM node:22-bookworm
 ENV NODE_ENV=production
+COPY --from=clawdbot-build /usr/local/bin/gog /usr/local/bin/gog
+ENV XDG_CONFIG_HOME=/data/.config
+ENV XDG_DATA_HOME=/data/.local/share
+ENV HOME=/data
+RUN mkdir -p /data/.config /data/.local/share
+
 
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
