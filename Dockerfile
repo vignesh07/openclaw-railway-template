@@ -1,7 +1,16 @@
-# Build clawdbot from source to avoid npm packaging gaps (some dist files are not shipped).
+# Build gog (gogcli) with a modern Go toolchain
+FROM golang:1.23-bookworm AS gog-build
+RUN apt-get update && apt-get install -y --no-install-recommends git make ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/steipete/gogcli.git /tmp/gogcli \
+ && cd /tmp/gogcli \
+ && make \
+ && install -m 0755 ./bin/gog /usr/local/bin/gog
+
+# Build clawdbot from source
 FROM node:22-bookworm AS clawdbot-build
 
-# Dependencies needed for clawdbot build
+# Dependencies needed for clawdbot build (drop golang here)
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
@@ -10,16 +19,10 @@ RUN apt-get update \
     python3 \
     make \
     g++ \
-    golang \
  && rm -rf /var/lib/apt/lists/*
 
-# Build gog (gogcli) from source
-RUN git clone --depth 1 https://github.com/steipete/gogcli.git /tmp/gogcli \
- && cd /tmp/gogcli \
- && make \
- && install -m 0755 ./bin/gog /usr/local/bin/gog \
- && rm -rf /tmp/gogcli
-
+# Copy gog from the Go build stage
+COPY --from=gog-build /usr/local/bin/gog /usr/local/bin/gog
 
 # Install Bun (clawdbot build uses it)
 RUN curl -fsSL https://bun.sh/install | bash
@@ -28,16 +31,13 @@ ENV PATH="/root/.bun/bin:${PATH}"
 RUN corepack enable
 
 WORKDIR /clawdbot
-
-# Pin to a known ref (tag/branch). If it doesn't exist, fall back to main.
 ARG CLAWDBOT_GIT_REF=main
 RUN git clone --depth 1 --branch "${CLAWDBOT_GIT_REF}" https://github.com/clawdbot/clawdbot.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
-# Apply to all extension package.json files to handle workspace protocol (workspace:*).
 RUN set -eux; \
   find ./extensions -name 'package.json' -type f | while read -r f; do \
-    sed -i -E 's/"clawdbot"[[:space:]]*:[[:space:]]*">=[^"]+"/"clawdbot": "*"/g' "$f"; \
+    sed -i -E 's/"clawdbot"[[:space:]]*:[[:space:]]">=[^"]+"/"clawdbot": "*"/g' "$f"; \
     sed -i -E 's/"clawdbot"[[:space:]]*:[[:space:]]*"workspace:[^"]+"/"clawdbot": "*"/g' "$f"; \
   done
 
@@ -45,7 +45,6 @@ RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV CLAWDBOT_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
-
 
 # Runtime image
 FROM node:22-bookworm
