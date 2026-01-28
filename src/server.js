@@ -298,7 +298,6 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
   // This is intentionally minimal; later we can parse the CLI help output to stay perfectly in sync.
   const authGroups = [
     { value: "openai", label: "OpenAI", hint: "Codex OAuth + API key", options: [
-      { value: "codex-cli", label: "OpenAI Codex OAuth (Codex CLI)" },
       { value: "openai-codex", label: "OpenAI Codex (ChatGPT OAuth)" },
       { value: "openai-api-key", label: "OpenAI API key" }
     ]},
