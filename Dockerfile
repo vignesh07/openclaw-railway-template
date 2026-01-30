@@ -22,7 +22,10 @@ WORKDIR /openclaw
 
 # Pin to a known ref (tag/branch). If it doesn't exist, fall back to main.
 ARG OPENCLAW_GIT_REF=main
-RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/dodocha2021/openclaw.git .
+# Force cache invalidation by using the commit SHA
+ARG RAILWAY_GIT_COMMIT_SHA
+RUN echo "Invalidating cache for commit: ${RAILWAY_GIT_COMMIT_SHA}" && \
+    git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/dodocha2021/openclaw.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
 # Apply to all extension package.json files to handle workspace protocol (workspace:*).
