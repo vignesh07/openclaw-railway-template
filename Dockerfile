@@ -20,9 +20,11 @@ RUN corepack enable
 
 WORKDIR /openclaw
 
-# Pin to a known ref (tag/branch). If it doesn't exist, fall back to main.
-ARG OPENCLAW_GIT_REF=main
-RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
+# Pin to a known commit for stability. Update this when you want to upgrade OpenClaw.
+# Current: 76361ae (2026-01-31) - "revert: Switch back to tsc for compiling"
+ARG OPENCLAW_GIT_REF=76361ae3abe5f3bc830fbf023828b3fcacce421a
+RUN git clone https://github.com/openclaw/openclaw.git . && \
+    git checkout "${OPENCLAW_GIT_REF}"
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
 # Apply to all extension package.json files to handle workspace protocol (workspace:*).
@@ -60,7 +62,7 @@ COPY --from=openclaw-build /openclaw /openclaw
 RUN ln -s /openclaw/docs /docs
 
 # Provide an openclaw executable
-RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.mjs "$@"' > /usr/local/bin/openclaw \
+RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
   && chmod +x /usr/local/bin/openclaw
 
 COPY src ./src
