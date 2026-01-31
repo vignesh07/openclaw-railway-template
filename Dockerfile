@@ -49,6 +49,14 @@ RUN set -eux; \
     fi; \
   fi
 
+# Patch: Fix OpenRouter model ID format (PR #5079)
+# Changes "openrouter/auto" to "openrouter/openrouter/auto" to match expected format
+RUN set -eux; \
+  if [ -f "./src/commands/onboard-auth.credentials.ts" ]; then \
+    sed -i 's|"openrouter/auto"|"openrouter/openrouter/auto"|g' ./src/commands/onboard-auth.credentials.ts; \
+    echo "[patch] Fixed OpenRouter model ID format"; \
+  fi
+
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
