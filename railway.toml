@@ -12,3 +12,13 @@ startCommand = "node src/server.js"
 PORT = "8080"
 OPENCLAW_PUBLIC_PORT = "8080"
 NODE_ENV = "production"
+
+[watch]
+watchPatterns = [
+    "src/",
+    "scripts/",
+    "package.json",
+    "package-lock.json",
+    "Dockerfile",
+    "railway.toml"
+]
