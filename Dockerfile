@@ -65,8 +65,8 @@ RUN ln -s /openclaw/docs /docs
 RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
   && chmod +x /usr/local/bin/openclaw
 
-# Cache bust to force src rebuild
-ARG CACHE_BUST=20260201_0712
+# Cache bust to force src rebuild (update timestamp to force rebuild)
+ARG CACHE_BUST=20260201_1049_v2
 COPY src ./src
 
 # The wrapper listens on this port.
