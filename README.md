@@ -38,7 +38,7 @@ Optional:
 Notes:
 - This template pins OpenClaw to a known-good version by default via Docker build arg `OPENCLAW_GIT_REF`.
 
-4) Enable **Public Networking** (HTTP). Railway will assign a domain.
+4) Enable **Public Networking** (HTTP). Railway will assign a domain. (Port: `8080`)
 5) Deploy.
 
 Then:
