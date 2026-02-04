@@ -49,20 +49,14 @@ Before deploying, ensure you have:
 
 Configure these variables in Railway:
 
-#### Required Variables
-
-```
-SETUP_PASSWORD=<your-strong-password>
-```
-This password protects your `/setup` configuration panel.
-
 #### Recommended Variables
 
 ```
+SETUP_PASSWORD=<your-strong-password>
 OPENCLAW_STATE_DIR=/data/.openclaw
 OPENCLAW_WORKSPACE_DIR=/data/workspace
 ```
-These ensure OpenClaw stores data on the persistent volume.
+The `SETUP_PASSWORD` protects your `/setup` configuration panel. If not set, a secure random password will be auto-generated and shown in the deployment logs.
 
 #### Optional Variables
 
@@ -140,7 +134,7 @@ This template is optimized for Railway deployment from Docker:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SETUP_PASSWORD` | ✅ Yes | - | Password for `/setup` access |
+| `SETUP_PASSWORD` | No | Auto-generated | Password for `/setup` access |
 | `PORT` | No | 8080 | Port for web server |
 | `OPENCLAW_PUBLIC_PORT` | No | 8080 | Public-facing port |
 | `OPENCLAW_STATE_DIR` | No | `/data/.openclaw` | State directory path |

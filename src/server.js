@@ -31,7 +31,36 @@ const WORKSPACE_DIR =
   path.join(STATE_DIR, "workspace");
 
 // Protect /setup with a user-provided password.
-const SETUP_PASSWORD = process.env.SETUP_PASSWORD?.trim();
+// If not set via env, auto-generate and persist (similar to gateway token).
+let SETUP_PASSWORD_WAS_GENERATED = false;
+function resolveSetupPassword() {
+  const envPw = process.env.SETUP_PASSWORD?.trim();
+  if (envPw) return envPw;
+
+  const pwPath = path.join(STATE_DIR, "setup.password");
+  try {
+    const existing = fs.readFileSync(pwPath, "utf8").trim();
+    if (existing) {
+      SETUP_PASSWORD_WAS_GENERATED = true;
+      return existing;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Generate a secure random password (16 bytes = 32 hex chars)
+  const generated = crypto.randomBytes(16).toString("hex");
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(pwPath, generated, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    // best-effort
+  }
+  SETUP_PASSWORD_WAS_GENERATED = true;
+  return generated;
+}
+
+const SETUP_PASSWORD = resolveSetupPassword();
 
 // Gateway admin token (protects OpenClaw gateway + Control UI).
 // Must be stable across restarts. If not provided via env, persist it in the state dir.
@@ -198,13 +227,6 @@ async function restartGateway() {
 }
 
 function requireSetupAuth(req, res, next) {
-  if (!SETUP_PASSWORD) {
-    return res
-      .status(500)
-      .type("text/plain")
-      .send("SETUP_PASSWORD is not set. Set it in Railway Variables before using /setup.");
-  }
-
   const header = req.headers.authorization || "";
   const [scheme, encoded] = header.split(" ");
   if (scheme !== "Basic" || !encoded) {
@@ -965,8 +987,9 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[wrapper] workspace dir: ${WORKSPACE_DIR}`);
   console.log(`[wrapper] gateway token: ${OPENCLAW_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
   console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
-  if (!SETUP_PASSWORD) {
-    console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
+  if (SETUP_PASSWORD_WAS_GENERATED) {
+    console.log(`[wrapper] SETUP_PASSWORD was auto-generated: ${SETUP_PASSWORD}`);
+    console.log(`[wrapper] Set SETUP_PASSWORD in Railway Variables to use your own password.`);
   }
   // Don't start gateway unless configured; proxy will ensure it starts.
 });
