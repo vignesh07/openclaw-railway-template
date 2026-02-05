@@ -8,22 +8,45 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
+const warnedDeprecatedEnv = new Set();
+
+function getEnvWithShim(primaryKey, deprecatedKey) {
+  const primary = process.env[primaryKey]?.trim();
+  if (primary) return primary;
+
+  const deprecated = process.env[deprecatedKey]?.trim();
+  if (!deprecated) return undefined;
+
+  if (!warnedDeprecatedEnv.has(deprecatedKey)) {
+    console.warn(
+      `[deprecation] ${deprecatedKey} is deprecated. Use ${primaryKey} instead.`,
+    );
+    warnedDeprecatedEnv.add(deprecatedKey);
+  }
+
+  return deprecated;
+}
+
 // Railway deployments sometimes inject PORT=3000 by default. We want the wrapper to
 // reliably listen on 8080 unless explicitly overridden.
 //
 // Prefer OPENCLAW_PUBLIC_PORT (set in the Dockerfile / template) over PORT.
 const PORT = Number.parseInt(
-  process.env.OPENCLAW_PUBLIC_PORT ?? process.env.PORT ?? "8080",
+  getEnvWithShim("OPENCLAW_PUBLIC_PORT", "CLAWDBOT_PUBLIC_PORT") ??
+    process.env.PORT ??
+    "8080",
   10,
 );
 
 // State/workspace
 // OpenClaw defaults to ~/.openclaw.
 const STATE_DIR =
-  process.env.OPENCLAW_STATE_DIR?.trim() || path.join(os.homedir(), ".openclaw");
+  getEnvWithShim("OPENCLAW_STATE_DIR", "CLAWDBOT_STATE_DIR") ||
+  path.join(os.homedir(), ".openclaw");
 
 const WORKSPACE_DIR =
-  process.env.OPENCLAW_WORKSPACE_DIR?.trim() || path.join(STATE_DIR, "workspace");
+  getEnvWithShim("OPENCLAW_WORKSPACE_DIR", "CLAWDBOT_WORKSPACE_DIR") ||
+  path.join(STATE_DIR, "workspace");
 
 // Protect /setup with a user-provided password.
 const SETUP_PASSWORD = process.env.SETUP_PASSWORD?.trim();
@@ -31,7 +54,10 @@ const SETUP_PASSWORD = process.env.SETUP_PASSWORD?.trim();
 // Gateway admin token (protects OpenClaw gateway + Control UI).
 // Must be stable across restarts. If not provided via env, persist it in the state dir.
 function resolveGatewayToken() {
-  const envTok = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+  const envTok = getEnvWithShim(
+    "OPENCLAW_GATEWAY_TOKEN",
+    "CLAWDBOT_GATEWAY_TOKEN",
+  );
   if (envTok) return envTok;
 
   const tokenPath = path.join(STATE_DIR, "gateway.token");
@@ -70,7 +96,8 @@ function clawArgs(args) {
 
 function configPath() {
   return (
-    process.env.OPENCLAW_CONFIG_PATH?.trim() || path.join(STATE_DIR, "openclaw.json")
+    getEnvWithShim("OPENCLAW_CONFIG_PATH", "CLAWDBOT_CONFIG_PATH") ||
+    path.join(STATE_DIR, "openclaw.json")
   );
 }
 
