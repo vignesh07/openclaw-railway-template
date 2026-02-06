@@ -159,6 +159,50 @@ async function startGateway() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
+  // Ensure the config file always has the proxy-trust and auth settings the
+  // wrapper needs, even for configs created before this code was deployed.
+  try {
+    const cfgFile = configPath();
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
+    let dirty = false;
+
+    if (!cfg.gateway) cfg.gateway = {};
+    if (!cfg.gateway.auth) cfg.gateway.auth = {};
+    if (!cfg.gateway.controlUi) cfg.gateway.controlUi = {};
+
+    // Trust the wrapper proxy so forwarded headers are honored.
+    if (!Array.isArray(cfg.gateway.trustedProxies) || !cfg.gateway.trustedProxies.includes("127.0.0.1")) {
+      cfg.gateway.trustedProxies = ["127.0.0.1"];
+      dirty = true;
+    }
+
+    // Allow the Control UI to use token-only auth over the internal HTTP link.
+    if (cfg.gateway.controlUi.allowInsecureAuth !== true) {
+      cfg.gateway.controlUi.allowInsecureAuth = true;
+      dirty = true;
+    }
+
+    // Disable Tailscale identity headers (we are behind our own proxy, not Tailscale Serve).
+    if (cfg.gateway.auth.allowTailscale !== false) {
+      cfg.gateway.auth.allowTailscale = false;
+      dirty = true;
+    }
+
+    // Keep the auth token in sync with the wrapper's token.
+    if (cfg.gateway.auth.token !== OPENCLAW_GATEWAY_TOKEN) {
+      cfg.gateway.auth.mode = "token";
+      cfg.gateway.auth.token = OPENCLAW_GATEWAY_TOKEN;
+      dirty = true;
+    }
+
+    if (dirty) {
+      fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2), "utf8");
+      console.log("[wrapper] patched gateway config with proxy-trust settings");
+    }
+  } catch (err) {
+    console.warn(`[wrapper] could not patch gateway config: ${err.message}`);
+  }
+
   const args = [
     "gateway",
     "run",
@@ -554,6 +598,16 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+
+    // Trust the wrapper proxy (127.0.0.1) so forwarded headers are honored.
+    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", '["127.0.0.1"]']));
+
+    // The Control UI is served over HTTP internally (the proxy handles HTTPS externally via Railway).
+    // Allow insecure auth so the UI can fall back to token-only auth without a secure context.
+    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.controlUi.allowInsecureAuth", "true"]));
+
+    // Disable Tailscale identity headers since we are behind our own reverse proxy.
+    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.allowTailscale", "false"]));
 
     // Ensure model is written into config (important for OpenRouter where the CLI may not
     // recognise --model during non-interactive onboarding).
@@ -998,6 +1052,27 @@ app.use(async (req, res) => {
       await ensureGatewayRunning();
     } catch (err) {
       return res.status(503).type("text/plain").send(`Gateway not ready: ${String(err)}`);
+    }
+  }
+
+  // The Control UI reads the gateway token from the `token` query parameter
+  // and stores it in localStorage for WebSocket authentication.
+  // Inject it automatically so users never need to paste the token manually.
+  // Use a cookie to avoid redirect loops (the UI strips `token` from the URL
+  // after storing it, so we only redirect once per browser).
+  if (
+    OPENCLAW_GATEWAY_TOKEN &&
+    req.method === "GET" &&
+    req.accepts("html") &&
+    !req.query.token &&
+    !req.headers.cookie?.includes("_oc_tok_injected=1")
+  ) {
+    const uiPaths = ["/", "/openclaw", "/openclaw/", "/clawdbot", "/clawdbot/"];
+    if (uiPaths.includes(req.path)) {
+      // Set a session cookie so we don't redirect again.
+      res.cookie("_oc_tok_injected", "1", { httpOnly: true, sameSite: "lax" });
+      const sep = req.originalUrl.includes("?") ? "&" : "?";
+      return res.redirect(`${req.originalUrl}${sep}token=${encodeURIComponent(OPENCLAW_GATEWAY_TOKEN)}`);
     }
   }
 
