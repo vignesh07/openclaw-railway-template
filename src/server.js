@@ -967,6 +967,26 @@ proxy.on("error", (err, _req, _res) => {
   console.error("[proxy]", err);
 });
 
+// Inject the gateway token into proxied requests so the internal gateway
+// authenticates them. The browser never needs to know the real token.
+function injectGatewayToken(proxyReq) {
+  if (OPENCLAW_GATEWAY_TOKEN) {
+    proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+}
+
+proxy.on("proxyReq", (_proxyReq) => {
+  injectGatewayToken(_proxyReq);
+});
+
+// For WebSocket upgrades, append the token as a query parameter so the
+// gateway's WS handler can authenticate the connection.
+function injectWsToken(req) {
+  if (!OPENCLAW_GATEWAY_TOKEN) return;
+  const sep = req.url.includes("?") ? "&" : "?";
+  req.url = `${req.url}${sep}token=${encodeURIComponent(OPENCLAW_GATEWAY_TOKEN)}`;
+}
+
 app.use(async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
@@ -1011,6 +1031,8 @@ server.on("upgrade", async (req, socket, head) => {
     socket.destroy();
     return;
   }
+  // Inject token into the WS upgrade so the gateway authenticates it.
+  injectWsToken(req);
   proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
 });
 
