@@ -1,15 +1,46 @@
+// OpenClaw Setup - Client-side logic
 // Served at /setup/app.js
-// No fancy syntax: keep it maximally compatible.
 
 (function () {
-  // ---- Tab navigation ----
+  'use strict';
+
+  // ======== Toast System ========
+  var toastContainer = document.getElementById('toastContainer');
+  var TOAST_ICONS = {
+    success: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    error: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    info: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  };
+
+  function toast(message, type) {
+    type = type || 'info';
+    var el = document.createElement('div');
+    el.className = 'toast toast-' + type;
+    el.innerHTML = (TOAST_ICONS[type] || '') + '<span>' + escapeHtml(message) + '</span>';
+    toastContainer.appendChild(el);
+    setTimeout(function () {
+      el.classList.add('removing');
+      setTimeout(function () { el.remove(); }, 250);
+    }, 4000);
+  }
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ======== Tab Navigation ========
   var tabs = document.querySelectorAll('.tab');
   var panels = document.querySelectorAll('.tab-panel');
+  var TAB_NAMES = ['setup', 'channels', 'tools'];
 
   function switchTab(name) {
     tabs.forEach(function (t) {
-      t.classList.toggle('active', t.getAttribute('data-tab') === name);
-      t.setAttribute('aria-selected', t.getAttribute('data-tab') === name ? 'true' : 'false');
+      var isActive = t.getAttribute('data-tab') === name;
+      t.classList.toggle('active', isActive);
+      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      t.setAttribute('tabindex', isActive ? '0' : '-1');
     });
     panels.forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + name);
@@ -22,9 +53,63 @@
     });
   });
 
-  // ---- Element refs ----
+  // Keyboard shortcuts: 1/2/3 for tabs, arrow keys within tab bar
+  document.addEventListener('keydown', function (e) {
+    // Don't capture if user is typing in an input/textarea/select
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+    if (e.key === '1') switchTab('setup');
+    else if (e.key === '2') switchTab('channels');
+    else if (e.key === '3') switchTab('tools');
+
+    // Arrow key navigation within tabs
+    if (e.target.classList && e.target.classList.contains('tab')) {
+      var idx = TAB_NAMES.indexOf(e.target.getAttribute('data-tab'));
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        var next = TAB_NAMES[(idx + 1) % TAB_NAMES.length];
+        switchTab(next);
+        document.querySelector('[data-tab="' + next + '"]').focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        var prev = TAB_NAMES[(idx - 1 + TAB_NAMES.length) % TAB_NAMES.length];
+        switchTab(prev);
+        document.querySelector('[data-tab="' + prev + '"]').focus();
+      }
+    }
+  });
+
+  // ======== Channel Accordion ========
+  var channelCards = document.querySelectorAll('.channel-card');
+  channelCards.forEach(function (card) {
+    var header = card.querySelector('.channel-header');
+    if (!header) return;
+    header.addEventListener('click', function () {
+      var wasOpen = card.classList.contains('open');
+      card.classList.toggle('open');
+      header.setAttribute('aria-expanded', wasOpen ? 'false' : 'true');
+    });
+  });
+
+  // Track channel token inputs for "Connected" badges
+  function updateChannelBadges() {
+    var tg = document.getElementById('telegramToken');
+    var dc = document.getElementById('discordToken');
+    var sb = document.getElementById('slackBotToken');
+    if (tg) document.getElementById('channelTelegram').classList.toggle('has-token', !!tg.value.trim());
+    if (dc) document.getElementById('channelDiscord').classList.toggle('has-token', !!dc.value.trim());
+    if (sb) document.getElementById('channelSlack').classList.toggle('has-token', !!sb.value.trim());
+  }
+  ['telegramToken', 'discordToken', 'slackBotToken', 'slackAppToken'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('input', updateChannelBadges);
+  });
+
+  // ======== Element refs ========
   var statusEl = document.getElementById('status');
   var statusDot = document.getElementById('statusDot');
+  var statusVersion = document.getElementById('statusVersion');
   var logEl = document.getElementById('log');
 
   var authChoiceEl = document.getElementById('authChoice');
@@ -47,7 +132,7 @@
   var importRunEl = document.getElementById('importRun');
   var importOutEl = document.getElementById('importOut');
 
-  // ---- Model field visibility ----
+  // ======== Model field visibility ========
   var providersWithModel = {
     'openrouter-api-key': { placeholder: 'anthropic/claude-sonnet-4', hint: 'OpenRouter: <code>provider/model-name</code>' },
     'openai-api-key': { placeholder: 'gpt-4o', hint: 'e.g. gpt-4o, gpt-4o-mini, o1-preview' },
@@ -68,10 +153,10 @@
     }
   }
 
-  authChoiceEl.onchange = updateModelVisibility;
+  authChoiceEl.addEventListener('change', updateModelVisibility);
   updateModelVisibility();
 
-  // ---- Helpers ----
+  // ======== Helpers ========
   function showLog(text) {
     logEl.textContent = text;
     logEl.classList.add('visible');
@@ -80,11 +165,21 @@
   function appendLog(text) {
     logEl.textContent += text;
     logEl.classList.add('visible');
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function setStatus(text, ok) {
+  function setStatus(text, state) {
     statusEl.textContent = text;
-    statusDot.className = 'status-dot' + (ok === true ? ' ok' : ok === false ? ' err' : '');
+    statusDot.className = 'status-dot';
+    if (state === 'ok') statusDot.classList.add('ok');
+    else if (state === 'err') statusDot.classList.add('err');
+    else if (state === 'loading') statusDot.classList.add('loading');
+  }
+
+  function setLoading(btn, loading) {
+    if (!btn) return;
+    btn.classList.toggle('loading', loading);
+    btn.disabled = loading;
   }
 
   function httpJson(url, opts) {
@@ -104,29 +199,35 @@
     });
   }
 
-  // ---- Status ----
+  // ======== Status ========
   function refreshStatus() {
-    setStatus('Checking...', null);
+    setStatus('Checking...', 'loading');
     return httpJson('/setup/api/status').then(function (j) {
-      var ver = j.openclawVersion ? (' v' + j.openclawVersion) : '';
+      var ver = j.openclawVersion ? j.openclawVersion : '';
+      if (statusVersion) statusVersion.textContent = ver ? 'v' + ver : '';
       if (j.configured) {
-        setStatus('Running' + ver, true);
+        setStatus('Instance running', 'ok');
       } else {
-        setStatus('Not configured' + ver, false);
+        setStatus('Not configured', 'err');
       }
-      if (configReloadEl && configTextEl) {
-        loadConfigRaw();
-      }
+      loadConfigRaw();
     }).catch(function (e) {
-      setStatus('Error: ' + String(e), false);
+      setStatus('Connection error', 'err');
+      if (statusVersion) statusVersion.textContent = '';
     });
   }
 
-  // ---- Run setup ----
-  document.getElementById('run').onclick = function () {
-    var btn = this;
-    btn.disabled = true;
-    btn.textContent = 'Deploying...';
+  // ======== Run setup ========
+  var runBtn = document.getElementById('run');
+  runBtn.addEventListener('click', function () {
+    var secret = document.getElementById('authSecret').value.trim();
+    if (!secret && authChoiceEl.value !== 'claude-cli' && authChoiceEl.value !== 'codex-cli') {
+      toast('Please enter an API key', 'error');
+      document.getElementById('authSecret').focus();
+      return;
+    }
+
+    setLoading(runBtn, true);
 
     var payload = {
       flow: document.getElementById('flow').value,
@@ -139,7 +240,7 @@
       slackAppToken: document.getElementById('slackAppToken').value
     };
 
-    showLog('Running setup...\n');
+    showLog('Deploying configuration...\n');
 
     fetch('/setup/api/run', {
       method: 'POST',
@@ -153,30 +254,44 @@
       var j;
       try { j = JSON.parse(text); } catch (_e) { j = { ok: false, output: text }; }
       appendLog(j.output || JSON.stringify(j, null, 2));
+      if (j.ok) {
+        toast('Configuration deployed successfully', 'success');
+      } else {
+        toast('Setup completed with warnings -- check the log', 'info');
+      }
       return refreshStatus();
     }).catch(function (e) {
       appendLog('\nError: ' + String(e) + '\n');
+      toast('Deployment failed: ' + String(e), 'error');
     }).finally(function () {
-      btn.disabled = false;
-      btn.textContent = 'Deploy Configuration';
+      setLoading(runBtn, false);
     });
-  };
+  });
 
-  // ---- Reset ----
-  document.getElementById('reset').onclick = function () {
+  // ======== Reset ========
+  document.getElementById('reset').addEventListener('click', function () {
     if (!confirm('Reset configuration? This deletes the config file so setup can run again.')) return;
     showLog('Resetting...\n');
     fetch('/setup/api/reset', { method: 'POST', credentials: 'same-origin' })
       .then(function (res) { if (res.status === 401) { window.location.href = '/auth/login'; return new Promise(function () {}); } return res.text(); })
-      .then(function (t) { appendLog(t + '\n'); return refreshStatus(); })
-      .catch(function (e) { appendLog('Error: ' + String(e) + '\n'); });
-  };
+      .then(function (t) {
+        appendLog(t + '\n');
+        toast('Configuration reset', 'info');
+        return refreshStatus();
+      })
+      .catch(function (e) {
+        appendLog('Error: ' + String(e) + '\n');
+        toast('Reset failed', 'error');
+      });
+  });
 
-  // ---- Debug console ----
+  // ======== Debug Console ========
   function runConsole() {
     if (!consoleCmdEl || !consoleRunEl) return;
     var cmd = consoleCmdEl.value;
     var arg = consoleArgEl ? consoleArgEl.value : '';
+
+    setLoading(consoleRunEl, true);
     if (consoleOutEl) { consoleOutEl.textContent = 'Running ' + cmd + '...\n'; consoleOutEl.classList.add('visible'); }
 
     return httpJson('/setup/api/console/run', {
@@ -185,56 +300,68 @@
       body: JSON.stringify({ cmd: cmd, arg: arg })
     }).then(function (j) {
       if (consoleOutEl) consoleOutEl.textContent = (j.output || JSON.stringify(j, null, 2));
+      toast('Command completed', 'success');
       return refreshStatus();
     }).catch(function (e) {
       if (consoleOutEl) consoleOutEl.textContent += '\nError: ' + String(e) + '\n';
+      toast('Command failed', 'error');
+    }).finally(function () {
+      setLoading(consoleRunEl, false);
     });
   }
 
-  if (consoleRunEl) {
-    consoleRunEl.onclick = runConsole;
-  }
+  if (consoleRunEl) consoleRunEl.addEventListener('click', runConsole);
 
-  // ---- Config editor ----
+  // ======== Config Editor ========
   function loadConfigRaw() {
     if (!configTextEl) return;
     if (configOutEl) configOutEl.textContent = '';
     return httpJson('/setup/api/config/raw').then(function (j) {
       if (configPathEl) {
-        configPathEl.textContent = 'File: ' + (j.path || '(unknown)') + (j.exists ? '' : ' (not yet created)');
+        configPathEl.textContent = (j.path || 'Config file') + (j.exists ? '' : ' (not yet created)');
       }
       configTextEl.value = j.content || '';
-    }).catch(function (e) {
-      if (configOutEl) { configOutEl.textContent = 'Error: ' + String(e); configOutEl.classList.add('visible'); }
+    }).catch(function () {
+      // Silent -- config may not exist yet
     });
   }
 
   function saveConfigRaw() {
     if (!configTextEl) return;
     if (!confirm('Save config and restart gateway?')) return;
+
+    setLoading(configSaveEl, true);
     if (configOutEl) { configOutEl.textContent = 'Saving...\n'; configOutEl.classList.add('visible'); }
+
     return httpJson('/setup/api/config/raw', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ content: configTextEl.value })
-    }).then(function (j) {
-      if (configOutEl) configOutEl.textContent = 'Saved. Gateway restarted.\n';
+    }).then(function () {
+      if (configOutEl) configOutEl.textContent = 'Saved. Gateway restarting...\n';
+      toast('Configuration saved', 'success');
       return refreshStatus();
     }).catch(function (e) {
       if (configOutEl) configOutEl.textContent += '\nError: ' + String(e) + '\n';
+      toast('Save failed: ' + String(e), 'error');
+    }).finally(function () {
+      setLoading(configSaveEl, false);
     });
   }
 
-  if (configReloadEl) configReloadEl.onclick = loadConfigRaw;
-  if (configSaveEl) configSaveEl.onclick = saveConfigRaw;
+  if (configReloadEl) configReloadEl.addEventListener('click', function () {
+    loadConfigRaw().then(function () { toast('Config reloaded', 'info'); });
+  });
+  if (configSaveEl) configSaveEl.addEventListener('click', saveConfigRaw);
 
-  // ---- Import ----
+  // ======== Import ========
   function runImport() {
     if (!importRunEl || !importFileEl) return;
     var f = importFileEl.files && importFileEl.files[0];
-    if (!f) { alert('Pick a .tar.gz file first'); return; }
+    if (!f) { toast('Pick a .tar.gz file first', 'error'); return; }
     if (!confirm('Import backup? This overwrites files and restarts the gateway.')) return;
 
+    setLoading(importRunEl, true);
     if (importOutEl) { importOutEl.textContent = 'Uploading...\n'; importOutEl.classList.add('visible'); }
 
     return f.arrayBuffer().then(function (buf) {
@@ -247,24 +374,28 @@
     }).then(function (res) {
       return res.text().then(function (t) {
         if (importOutEl) importOutEl.textContent += t + '\n';
+        toast('Backup imported successfully', 'success');
         return refreshStatus();
       });
     }).catch(function (e) {
       if (importOutEl) importOutEl.textContent += '\nError: ' + String(e) + '\n';
+      toast('Import failed', 'error');
+    }).finally(function () {
+      setLoading(importRunEl, false);
     });
   }
 
-  if (importRunEl) importRunEl.onclick = runImport;
+  if (importRunEl) importRunEl.addEventListener('click', runImport);
 
-  // ---- Pairing ----
+  // ======== Pairing ========
   var pairingBtn = document.getElementById('pairingApprove');
   if (pairingBtn) {
-    pairingBtn.onclick = function () {
+    pairingBtn.addEventListener('click', function () {
       var channel = prompt('Channel (telegram or discord):');
       if (!channel) return;
       channel = channel.trim().toLowerCase();
       if (channel !== 'telegram' && channel !== 'discord') {
-        alert('Must be "telegram" or "discord"');
+        toast('Must be "telegram" or "discord"', 'error');
         return;
       }
       var code = prompt('Pairing code:');
@@ -276,11 +407,35 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ channel: channel, code: code.trim() })
       }).then(function (r) { return r.text(); })
-        .then(function (t) { appendLog(t + '\n'); })
-        .catch(function (e) { appendLog('Error: ' + String(e) + '\n'); });
-    };
+        .then(function (t) {
+          appendLog(t + '\n');
+          toast('Pairing approved', 'success');
+        })
+        .catch(function (e) {
+          appendLog('Error: ' + String(e) + '\n');
+          toast('Pairing failed', 'error');
+        });
+    });
   }
 
-  // ---- Init ----
+  // ======== Config textarea: Tab key inserts tab instead of moving focus ========
+  if (configTextEl) {
+    configTextEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        var start = this.selectionStart;
+        var end = this.selectionEnd;
+        this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 2;
+      }
+      // Ctrl+S / Cmd+S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveConfigRaw();
+      }
+    });
+  }
+
+  // ======== Init ========
   refreshStatus();
 })();

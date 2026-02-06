@@ -370,44 +370,79 @@ function loginPageHTML(error) {
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: #09090b; color: #fafafa; min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
     }
-    .login-wrapper { width: 100%; max-width: 380px; padding: 1.5rem; }
+
+    /* Subtle radial glow */
+    body::before {
+      content: ''; position: fixed; top: -40%; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 600px; border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(59,130,246,0.06) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+
+    .login-wrapper {
+      width: 100%; max-width: 360px; padding: 1.5rem;
+      position: relative; z-index: 1;
+    }
     .logo-mark {
-      width: 48px; height: 48px; border-radius: 14px;
-      background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
-      border: 1px solid #3f3f46;
+      width: 44px; height: 44px; border-radius: 12px;
+      background: #131316; border: 1px solid #232329;
       display: flex; align-items: center; justify-content: center;
       margin: 0 auto 1.5rem;
+      animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+      box-shadow: 0 0 0 4px rgba(59,130,246,0.06), 0 4px 24px rgba(0,0,0,0.4);
     }
-    .logo-mark svg { width: 24px; height: 24px; color: #fafafa; }
-    h1 { font-size: 1.25rem; font-weight: 600; text-align: center; letter-spacing: -0.01em; }
-    .subtitle { color: #71717a; font-size: 0.875rem; text-align: center; margin-top: 0.375rem; margin-bottom: 2rem; }
+    .logo-mark svg { width: 22px; height: 22px; color: #3b82f6; }
+    h1 {
+      font-size: 1.125rem; font-weight: 600; text-align: center;
+      letter-spacing: -0.02em; line-height: 1.3;
+      animation: fadeUp 0.45s cubic-bezier(0.4,0,0.2,1) 0.1s both;
+    }
+    .subtitle {
+      color: #71717a; font-size: 0.8125rem; text-align: center;
+      margin-top: 0.375rem; margin-bottom: 2rem;
+      animation: fadeUp 0.45s cubic-bezier(0.4,0,0.2,1) 0.15s both;
+    }
     .alert {
       padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.8125rem;
       margin-bottom: 1.25rem; line-height: 1.5;
+      animation: fadeUp 0.4s cubic-bezier(0.4,0,0.2,1) 0.2s both;
     }
-    .alert-error { background: #1c0a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
-    .alert-warn { background: #1a1500; border: 1px solid #854d0e; color: #fde68a; }
-    .alert code { background: #27272a; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.75rem; color: #e4e4e7; }
+    .alert-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(127,29,29,0.5); color: #fca5a5; }
+    .alert-warn { background: rgba(234,179,8,0.06); border: 1px solid rgba(133,77,14,0.5); color: #fde68a; }
+    .alert code {
+      background: #1c1c21; padding: 0.1rem 0.3rem; border-radius: 3px;
+      font-size: 0.75rem; color: #d4d4d8;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    }
     .btn-github {
-      display: flex; align-items: center; justify-content: center; gap: 0.625rem;
-      width: 100%; padding: 0.75rem 1rem; border-radius: 10px; border: 1px solid #27272a;
-      background: #fafafa; color: #09090b; font-size: 0.875rem; font-weight: 600;
-      cursor: pointer; transition: background 0.15s, transform 0.1s;
-      text-decoration: none;
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+      width: 100%; padding: 0.6875rem 1rem; border-radius: 10px;
+      border: 1px solid #232329; background: #fafafa; color: #09090b;
+      font-size: 0.8125rem; font-weight: 600; cursor: pointer;
+      transition: all 0.15s cubic-bezier(0.4,0,0.2,1);
+      text-decoration: none; position: relative;
+      animation: fadeUp 0.5s cubic-bezier(0.4,0,0.2,1) 0.2s both;
     }
-    .btn-github:hover { background: #e4e4e7; }
-    .btn-github:active { transform: scale(0.985); }
-    .btn-github.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-    .btn-github svg { width: 18px; height: 18px; flex-shrink: 0; }
-    .footer-text { text-align: center; margin-top: 2rem; font-size: 0.75rem; color: #52525b; }
-    .footer-text a { color: #71717a; text-decoration: none; }
-    .footer-text a:hover { color: #a1a1aa; }
+    .btn-github:hover { background: #e4e4e7; box-shadow: 0 2px 12px rgba(250,250,250,0.08); }
+    .btn-github:active { transform: scale(0.98); }
+    .btn-github.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .btn-github svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .footer-text {
+      text-align: center; margin-top: 2rem; font-size: 0.6875rem; color: #3f3f46;
+      display: flex; align-items: center; justify-content: center; gap: 0.375rem;
+      animation: fadeUp 0.5s cubic-bezier(0.4,0,0.2,1) 0.3s both;
+    }
+    .footer-text svg { width: 12px; height: 12px; }
   </style>
 </head>
 <body>
   <div class="login-wrapper">
-    <div class="logo-mark">
+    <div class="logo-mark" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
     </div>
     <h1>Welcome to OpenClaw</h1>
@@ -418,7 +453,10 @@ function loginPageHTML(error) {
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
       Continue with GitHub
     </a>
-    <p class="footer-text">Secured by GitHub OAuth</p>
+    <p class="footer-text">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      Secured by GitHub OAuth
+    </p>
   </div>
 </body>
 </html>`;
@@ -556,151 +594,258 @@ app.get("/setup", (req, res) => {
 
     :root {
       --bg: #09090b;
-      --surface: #18181b;
-      --surface-2: #27272a;
-      --border: #27272a;
+      --surface: #131316;
+      --surface-2: #1c1c21;
+      --surface-3: #27272a;
+      --border: #232329;
       --border-hover: #3f3f46;
+      --border-focus: #3b82f6;
       --text: #fafafa;
       --text-muted: #a1a1aa;
       --text-dim: #71717a;
       --accent: #3b82f6;
-      --accent-muted: rgba(59, 130, 246, 0.15);
+      --accent-hover: #2563eb;
+      --accent-muted: rgba(59,130,246,0.12);
       --success: #22c55e;
-      --success-muted: rgba(34, 197, 94, 0.12);
+      --success-muted: rgba(34,197,94,0.1);
+      --warn: #eab308;
+      --warn-muted: rgba(234,179,8,0.1);
       --danger: #ef4444;
-      --danger-muted: rgba(239, 68, 68, 0.1);
+      --danger-muted: rgba(239,68,68,0.08);
       --radius: 12px;
       --radius-sm: 8px;
+      --radius-xs: 6px;
       --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
     body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.5; min-height: 100vh; }
 
+    /* ---- Animations ---- */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 400px; } }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-8px) scale(0.95); } }
+    .animate-in { animation: fadeUp 0.4s var(--ease) both; }
+    .animate-in-delay-1 { animation-delay: 0.05s; }
+    .animate-in-delay-2 { animation-delay: 0.1s; }
+    .animate-in-delay-3 { animation-delay: 0.15s; }
+
+    /* ---- Toast system ---- */
+    #toastContainer {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+      display: flex; flex-direction: column-reverse; gap: 0.5rem;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      padding: 0.625rem 1rem; border-radius: var(--radius-sm);
+      font-size: 0.8125rem; font-weight: 500;
+      backdrop-filter: blur(12px); border: 1px solid var(--border);
+      animation: toastIn 0.3s var(--ease-spring) both;
+      display: flex; align-items: center; gap: 0.5rem;
+      max-width: 360px; line-height: 1.4;
+    }
+    .toast.removing { animation: toastOut 0.25s var(--ease) both; }
+    .toast-success { background: rgba(34,197,94,0.12); color: #86efac; border-color: rgba(34,197,94,0.2); }
+    .toast-error { background: rgba(239,68,68,0.12); color: #fca5a5; border-color: rgba(239,68,68,0.2); }
+    .toast-info { background: rgba(59,130,246,0.12); color: #93c5fd; border-color: rgba(59,130,246,0.2); }
+    .toast-icon { flex-shrink: 0; width: 16px; height: 16px; }
+
     /* ---- Top nav ---- */
     .topbar {
       position: sticky; top: 0; z-index: 50;
-      background: rgba(9,9,11,0.85); backdrop-filter: blur(12px);
+      background: rgba(9,9,11,0.8); backdrop-filter: blur(16px) saturate(1.2);
       border-bottom: 1px solid var(--border);
-      padding: 0 1.5rem; height: 56px;
+      padding: 0 1.5rem; height: 52px;
       display: flex; align-items: center; justify-content: space-between;
     }
-    .topbar-left { display: flex; align-items: center; gap: 0.75rem; }
-    .topbar-brand { font-weight: 600; font-size: 0.9375rem; letter-spacing: -0.01em; color: var(--text); text-decoration: none; }
-    .avatar { width: 24px; height: 24px; border-radius: 50%; }
-    .user-name { font-size: 0.8125rem; color: var(--text-muted); }
-    .topbar-right { display: flex; align-items: center; gap: 1rem; }
-    .nav-link { font-size: 0.8125rem; color: var(--text-dim); text-decoration: none; transition: color 0.15s; }
+    .topbar-left { display: flex; align-items: center; gap: 0.5rem; }
+    .topbar-brand {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-weight: 600; font-size: 0.875rem; letter-spacing: -0.02em;
+      color: var(--text); text-decoration: none;
+    }
+    .topbar-brand svg { width: 20px; height: 20px; color: var(--accent); }
+    .topbar-sep { width: 1px; height: 16px; background: var(--border); margin: 0 0.25rem; }
+    .topbar-page { font-size: 0.8125rem; color: var(--text-dim); font-weight: 400; }
+    .avatar { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); }
+    .user-name { font-size: 0.75rem; color: var(--text-dim); }
+    .topbar-right { display: flex; align-items: center; gap: 0.75rem; }
+    .nav-link { font-size: 0.75rem; color: var(--text-dim); text-decoration: none; transition: color 0.15s; }
     .nav-link:hover { color: var(--text-muted); }
     .open-ui-btn {
       display: inline-flex; align-items: center; gap: 0.375rem;
-      font-size: 0.8125rem; font-weight: 500; color: var(--accent);
-      text-decoration: none; padding: 0.375rem 0.75rem;
-      border: 1px solid rgba(59,130,246,0.25); border-radius: var(--radius-sm);
-      transition: background 0.15s, border-color 0.15s;
+      font-size: 0.75rem; font-weight: 500; color: var(--accent);
+      text-decoration: none; padding: 0.3125rem 0.625rem;
+      border: 1px solid rgba(59,130,246,0.2); border-radius: var(--radius-xs);
+      transition: all 0.15s var(--ease); background: transparent;
     }
-    .open-ui-btn:hover { background: var(--accent-muted); border-color: rgba(59,130,246,0.4); }
-    .open-ui-btn svg { width: 14px; height: 14px; }
+    .open-ui-btn:hover { background: var(--accent-muted); border-color: rgba(59,130,246,0.35); }
+    .open-ui-btn svg { width: 12px; height: 12px; }
 
     /* ---- Layout ---- */
-    .shell { max-width: 640px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    .shell { max-width: 620px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
 
     /* ---- Status banner ---- */
     .status-banner {
-      display: flex; align-items: center; gap: 0.75rem;
-      padding: 0.875rem 1rem; border-radius: var(--radius);
+      display: flex; align-items: center; gap: 0.625rem;
+      padding: 0.75rem 1rem; border-radius: var(--radius);
       border: 1px solid var(--border); background: var(--surface);
-      margin-bottom: 2rem;
+      margin-bottom: 1.75rem; animation: fadeUp 0.35s var(--ease) both;
     }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #52525b; flex-shrink: 0; }
-    .status-dot.ok { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.4); }
-    .status-dot.err { background: var(--danger); box-shadow: 0 0 8px rgba(239,68,68,0.3); }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #52525b; flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .status-dot.ok { background: var(--success); box-shadow: 0 0 0 3px var(--success-muted), 0 0 12px rgba(34,197,94,0.25); }
+    .status-dot.err { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-muted), 0 0 12px rgba(239,68,68,0.2); }
+    .status-dot.loading { animation: pulse 1.5s ease-in-out infinite; }
     .status-text { flex: 1; font-size: 0.8125rem; color: var(--text-muted); }
+    .status-version { font-size: 0.6875rem; color: var(--text-dim); font-family: var(--font-mono); }
 
     /* ---- Tabs ---- */
     .tabs {
-      display: flex; gap: 0; border-bottom: 1px solid var(--border);
-      margin-bottom: 1.5rem; overflow-x: auto;
+      display: flex; gap: 0.125rem; padding: 3px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 1.75rem;
+      animation: fadeUp 0.4s var(--ease) 0.05s both;
     }
     .tab {
-      padding: 0.625rem 1rem; font-size: 0.8125rem; font-weight: 500;
+      flex: 1; padding: 0.5rem 0.75rem; font-size: 0.8125rem; font-weight: 500;
       color: var(--text-dim); cursor: pointer; border: 0; background: 0;
-      border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
-      white-space: nowrap; font-family: var(--font);
+      border-radius: calc(var(--radius) - 3px);
+      transition: all 0.2s var(--ease); white-space: nowrap; font-family: var(--font);
+      position: relative;
     }
     .tab:hover { color: var(--text-muted); }
-    .tab.active { color: var(--text); border-bottom-color: var(--text); }
+    .tab.active {
+      color: var(--text); background: var(--surface-2);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+    .tab .kbd {
+      display: inline-block; font-size: 0.625rem; font-family: var(--font-mono);
+      color: var(--text-dim); margin-left: 0.375rem;
+      padding: 0.0625rem 0.3125rem; border-radius: 3px;
+      border: 1px solid var(--border); background: var(--bg);
+      vertical-align: 1px; line-height: 1.2;
+    }
 
     .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+    .tab-panel.active { display: block; animation: fadeUp 0.3s var(--ease) both; }
 
     /* ---- Cards ---- */
     .card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem;
-      transition: border-color 0.15s;
+      border-radius: var(--radius); padding: 1.25rem; margin-bottom: 0.875rem;
+      transition: border-color 0.2s var(--ease);
     }
     .card:hover { border-color: var(--border-hover); }
     .card-header { margin-bottom: 1rem; }
-    .card-title { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; }
-    .card-desc { font-size: 0.8125rem; color: var(--text-dim); margin-top: 0.25rem; }
+    .card-title {
+      font-size: 0.875rem; font-weight: 600; letter-spacing: -0.01em;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .card-title-icon { width: 16px; height: 16px; color: var(--text-dim); flex-shrink: 0; }
+    .card-desc { font-size: 0.8125rem; color: var(--text-dim); margin-top: 0.25rem; line-height: 1.5; }
 
     /* ---- Forms ---- */
     .field { margin-bottom: 1rem; }
-    .field-label { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.375rem; }
-    .field-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; line-height: 1.4; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label {
+      display: flex; align-items: center; gap: 0.375rem;
+      font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.375rem;
+    }
+    .field-required { color: var(--danger); font-size: 0.75rem; }
+    .field-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3125rem; line-height: 1.5; }
     input, select, textarea {
       width: 100%; padding: 0.5rem 0.75rem;
       border: 1px solid var(--border); border-radius: var(--radius-sm);
-      font-size: 0.875rem; background: var(--bg); color: var(--text);
+      font-size: 0.8125rem; background: var(--bg); color: var(--text);
       outline: none; transition: border-color 0.15s, box-shadow 0.15s;
       font-family: var(--font);
     }
+    input:hover, select:hover, textarea:hover { border-color: var(--border-hover); }
     input:focus, select:focus, textarea:focus {
-      border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-muted);
+      border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-muted);
     }
-    input[type="password"] { font-family: var(--font-mono); letter-spacing: 0.05em; }
-    select { cursor: pointer; }
+    input[type="password"] { font-family: var(--font-mono); letter-spacing: 0.04em; font-size: 0.8125rem; }
+    select {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 0.75rem center;
+      padding-right: 2rem; appearance: none;
+    }
 
     /* ---- Buttons ---- */
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
-      padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid transparent;
+      padding: 0.4375rem 0.875rem; border-radius: var(--radius-sm); border: 1px solid transparent;
       font-size: 0.8125rem; font-weight: 600; cursor: pointer;
-      transition: background 0.15s, transform 0.1s, opacity 0.15s;
-      font-family: var(--font);
+      transition: all 0.15s var(--ease); font-family: var(--font);
+      position: relative; overflow: hidden;
     }
-    .btn:active { transform: scale(0.98); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:hover:not(:disabled) { background: #e4e4e7; }
     .btn-secondary { background: var(--surface-2); color: var(--text-muted); border-color: var(--border); }
-    .btn-secondary:hover { background: #3f3f46; color: var(--text); }
-    .btn-danger { background: var(--danger-muted); color: #fca5a5; border-color: #7f1d1d; }
-    .btn-danger:hover { background: rgba(239,68,68,0.18); }
-    .btn-ghost { background: transparent; color: var(--text-dim); }
-    .btn-ghost:hover { color: var(--text-muted); background: var(--surface); }
-    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-secondary:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--border-hover); }
+    .btn-danger { background: var(--danger-muted); color: #fca5a5; border-color: rgba(127,29,29,0.5); }
+    .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.15); }
+    .btn-ghost { background: transparent; color: var(--text-dim); border-color: transparent; }
+    .btn-ghost:hover:not(:disabled) { color: var(--text-muted); background: var(--surface); }
+    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+    /* Button spinner */
+    .btn .spinner {
+      width: 14px; height: 14px; border: 2px solid transparent;
+      border-top-color: currentColor; border-radius: 50%;
+      animation: spin 0.6s linear infinite; display: none;
+    }
+    .btn.loading .spinner { display: inline-block; }
+    .btn.loading .btn-label { opacity: 0.7; }
 
     /* ---- Channel cards ---- */
-    .channel-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+    .channel-grid { display: flex; flex-direction: column; gap: 0.5rem; }
     .channel-card {
       border: 1px solid var(--border); border-radius: var(--radius);
-      overflow: hidden; transition: border-color 0.15s;
+      overflow: hidden; transition: all 0.2s var(--ease);
     }
     .channel-card:hover { border-color: var(--border-hover); }
     .channel-header {
       display: flex; align-items: center; gap: 0.625rem;
-      padding: 0.75rem 1rem; background: var(--surface); cursor: pointer;
+      padding: 0.6875rem 1rem; background: var(--surface); cursor: pointer;
       border: 0; width: 100%; text-align: left; color: var(--text);
       font-family: var(--font); font-size: 0.8125rem; font-weight: 500;
+      transition: background 0.15s;
     }
-    .channel-header:hover { background: rgba(39,39,42,0.8); }
-    .channel-icon { width: 20px; height: 20px; flex-shrink: 0; color: var(--text-dim); }
+    .channel-header:hover { background: var(--surface-2); }
+    .channel-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--text-dim); }
     .channel-name { flex: 1; }
-    .channel-toggle { font-size: 0.75rem; color: var(--text-dim); transition: transform 0.2s; }
-    .channel-body { padding: 0 1rem 1rem; display: none; background: var(--surface); }
-    .channel-card.open .channel-body { display: block; }
-    .channel-card.open .channel-toggle { transform: rotate(180deg); }
+    .channel-badge {
+      font-size: 0.625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 0.125rem 0.375rem; border-radius: var(--radius-xs);
+      background: var(--success-muted); color: var(--success);
+      display: none;
+    }
+    .channel-card.has-token .channel-badge { display: inline-block; }
+    .channel-chevron {
+      width: 16px; height: 16px; color: var(--text-dim);
+      transition: transform 0.25s var(--ease);
+    }
+    .channel-body {
+      max-height: 0; overflow: hidden; background: var(--surface);
+      transition: max-height 0.3s var(--ease), padding 0.3s var(--ease);
+      padding: 0 1rem;
+    }
+    .channel-card.open .channel-body { max-height: 300px; padding: 0.75rem 1rem 1rem; }
+    .channel-card.open .channel-chevron { transform: rotate(180deg); }
 
     /* ---- Console ---- */
     .console-bar { display: flex; gap: 0.5rem; align-items: center; }
@@ -712,38 +857,64 @@ app.get("/setup", (req, res) => {
       white-space: pre-wrap; word-break: break-word;
       background: var(--bg); border: 1px solid var(--border);
       border-radius: var(--radius-sm); padding: 0.75rem;
-      font-family: var(--font-mono); font-size: 0.75rem;
-      margin-top: 0.75rem; max-height: 280px; overflow-y: auto;
-      display: none; color: var(--text-muted); line-height: 1.6;
+      font-family: var(--font-mono); font-size: 0.6875rem;
+      margin-top: 0.75rem; max-height: 260px; overflow-y: auto;
+      display: none; color: var(--text-dim); line-height: 1.7;
+      scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent;
     }
-    pre.visible { display: block; }
+    pre.visible { display: block; animation: fadeIn 0.2s var(--ease); }
 
     code {
-      background: var(--surface-2); padding: 0.1rem 0.3rem;
-      border-radius: 3px; font-size: 0.8em; color: #e4e4e7;
+      background: var(--surface-2); padding: 0.125rem 0.3125rem;
+      border-radius: 4px; font-size: 0.8em; color: #d4d4d8;
       font-family: var(--font-mono);
     }
 
     .separator { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
 
+    /* ---- Empty state ---- */
+    .empty-hint {
+      text-align: center; padding: 2rem 1rem; color: var(--text-dim); font-size: 0.8125rem;
+    }
+    .empty-hint svg { width: 32px; height: 32px; margin: 0 auto 0.75rem; color: var(--surface-3); }
+
+    /* ---- Kbd (keyboard shortcut) ---- */
+    kbd {
+      display: inline-block; font-size: 0.625rem; font-family: var(--font-mono);
+      color: var(--text-dim); padding: 0.0625rem 0.3125rem; border-radius: 3px;
+      border: 1px solid var(--border); background: var(--bg);
+      line-height: 1.4; vertical-align: 1px;
+    }
+
     /* ---- Responsive ---- */
     @media (max-width: 480px) {
       .shell { padding: 1.25rem 1rem 3rem; }
-      .topbar { padding: 0 1rem; }
-      .tab { padding: 0.5rem 0.75rem; font-size: 0.75rem; }
+      .topbar { padding: 0 1rem; height: 48px; }
+      .tab .kbd { display: none; }
+      .topbar-page { display: none; }
+      .topbar-sep { display: none; }
+      #toastContainer { left: 1rem; right: 1rem; bottom: 1rem; }
+      .toast { max-width: 100%; }
     }
   </style>
 </head>
 <body>
 
+  <!-- Toast container -->
+  <div id="toastContainer" aria-live="polite"></div>
+
   <nav class="topbar" role="navigation">
     <div class="topbar-left">
-      <a href="/setup" class="topbar-brand">OpenClaw</a>
-      <span style="color:var(--text-dim);font-size:0.75rem;">Setup</span>
+      <a href="/setup" class="topbar-brand" aria-label="OpenClaw Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        OpenClaw
+      </a>
+      <div class="topbar-sep"></div>
+      <span class="topbar-page">Setup</span>
     </div>
     <div class="topbar-right">
       ${avatarHtml}
-      <a href="/openclaw" target="_blank" class="open-ui-btn" id="openUiLink">
+      <a href="/openclaw" target="_blank" class="open-ui-btn" id="openUiLink" aria-label="Open OpenClaw UI">
         Open UI
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       </a>
@@ -755,24 +926,34 @@ app.get("/setup", (req, res) => {
 
     <!-- Status -->
     <div class="status-banner">
-      <span class="status-dot" id="statusDot"></span>
-      <span class="status-text" id="status">Checking status...</span>
+      <span class="status-dot loading" id="statusDot"></span>
+      <span class="status-text" id="status">Connecting...</span>
+      <span class="status-version" id="statusVersion"></span>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs" role="tablist">
-      <button class="tab active" role="tab" data-tab="setup" aria-selected="true">Setup</button>
-      <button class="tab" role="tab" data-tab="channels">Channels</button>
-      <button class="tab" role="tab" data-tab="tools">Tools</button>
+    <!-- Tabs (pill style with keyboard shortcuts) -->
+    <div class="tabs" role="tablist" aria-label="Setup sections">
+      <button class="tab active" role="tab" data-tab="setup" aria-selected="true" tabindex="0">
+        Setup <span class="kbd">1</span>
+      </button>
+      <button class="tab" role="tab" data-tab="channels" aria-selected="false" tabindex="-1">
+        Channels <span class="kbd">2</span>
+      </button>
+      <button class="tab" role="tab" data-tab="tools" aria-selected="false" tabindex="-1">
+        Tools <span class="kbd">3</span>
+      </button>
     </div>
 
     <!-- ========== TAB: Setup ========== -->
-    <div class="tab-panel active" id="panel-setup">
+    <div class="tab-panel active" id="panel-setup" role="tabpanel">
 
-      <div class="card">
+      <div class="card animate-in">
         <div class="card-header">
-          <div class="card-title">AI Provider</div>
-          <div class="card-desc">Select your provider and enter credentials to get started.</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+            AI Provider
+          </div>
+          <div class="card-desc">Choose your provider and paste credentials.</div>
         </div>
 
         <div class="field">
@@ -791,7 +972,7 @@ app.get("/setup", (req, res) => {
         </div>
 
         <div class="field">
-          <label class="field-label" for="authSecret">API Key</label>
+          <label class="field-label" for="authSecret">API Key <span class="field-required">*</span></label>
           <input id="authSecret" type="password" placeholder="Paste your key here" autocomplete="off" />
         </div>
 
@@ -806,8 +987,11 @@ app.get("/setup", (req, res) => {
         <input type="hidden" id="flow" value="quickstart" />
       </div>
 
-      <div class="actions" style="margin-bottom:1rem;">
-        <button class="btn btn-primary" id="run">Deploy Configuration</button>
+      <div class="actions animate-in animate-in-delay-1" style="margin-bottom:0.875rem;">
+        <button class="btn btn-primary" id="run">
+          <span class="spinner"></span>
+          <span class="btn-label">Deploy Configuration</span>
+        </button>
         <button class="btn btn-ghost" id="reset">Reset</button>
       </div>
 
@@ -815,25 +999,29 @@ app.get("/setup", (req, res) => {
     </div>
 
     <!-- ========== TAB: Channels ========== -->
-    <div class="tab-panel" id="panel-channels">
+    <div class="tab-panel" id="panel-channels" role="tabpanel">
 
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Chat Platforms</div>
-          <div class="card-desc">Connect messaging platforms to your OpenClaw instance. These are optional and can be configured later.</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Chat Platforms
+          </div>
+          <div class="card-desc">Connect messaging platforms. All optional -- configure now or later from the UI.</div>
         </div>
 
         <div class="channel-grid">
 
           <!-- Telegram -->
           <div class="channel-card" id="channelTelegram">
-            <button class="channel-header" onclick="this.parentElement.classList.toggle('open')">
+            <button class="channel-header" aria-expanded="false" aria-controls="telegramBody">
               <svg class="channel-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
               <span class="channel-name">Telegram</span>
-              <span class="channel-toggle">&#9662;</span>
+              <span class="channel-badge">Connected</span>
+              <svg class="channel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="channel-body">
-              <div class="field" style="margin-top:0.75rem;">
+            <div class="channel-body" id="telegramBody">
+              <div class="field">
                 <label class="field-label" for="telegramToken">Bot token</label>
                 <input id="telegramToken" type="password" placeholder="123456:ABC..." autocomplete="off" />
                 <div class="field-hint">Get this from <code>@BotFather</code> on Telegram.</div>
@@ -843,29 +1031,31 @@ app.get("/setup", (req, res) => {
 
           <!-- Discord -->
           <div class="channel-card" id="channelDiscord">
-            <button class="channel-header" onclick="this.parentElement.classList.toggle('open')">
+            <button class="channel-header" aria-expanded="false" aria-controls="discordBody">
               <svg class="channel-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
               <span class="channel-name">Discord</span>
-              <span class="channel-toggle">&#9662;</span>
+              <span class="channel-badge">Connected</span>
+              <svg class="channel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="channel-body">
-              <div class="field" style="margin-top:0.75rem;">
+            <div class="channel-body" id="discordBody">
+              <div class="field">
                 <label class="field-label" for="discordToken">Bot token</label>
                 <input id="discordToken" type="password" placeholder="Bot token" autocomplete="off" />
-                <div class="field-hint">From the Discord Developer Portal. Enable MESSAGE CONTENT INTENT.</div>
+                <div class="field-hint">From Discord Developer Portal. Enable MESSAGE CONTENT INTENT.</div>
               </div>
             </div>
           </div>
 
           <!-- Slack -->
           <div class="channel-card" id="channelSlack">
-            <button class="channel-header" onclick="this.parentElement.classList.toggle('open')">
+            <button class="channel-header" aria-expanded="false" aria-controls="slackBody">
               <svg class="channel-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 01-2.52 2.523A2.528 2.528 0 010 15.165a2.527 2.527 0 012.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 012.521-2.52 2.527 2.527 0 012.521 2.52v6.313A2.528 2.528 0 018.834 24a2.528 2.528 0 01-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 01-2.521-2.52A2.528 2.528 0 018.834 0a2.528 2.528 0 012.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 012.521 2.521 2.528 2.528 0 01-2.521 2.521H2.522A2.528 2.528 0 010 8.834a2.528 2.528 0 012.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 012.522-2.521A2.528 2.528 0 0124 8.834a2.528 2.528 0 01-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 01-2.523 2.521 2.527 2.527 0 01-2.52-2.521V2.522A2.527 2.527 0 0115.163 0a2.528 2.528 0 012.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 012.523 2.522A2.528 2.528 0 0115.163 24a2.527 2.527 0 01-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 01-2.52-2.523 2.526 2.526 0 012.52-2.52h6.315A2.528 2.528 0 0124 15.163a2.528 2.528 0 01-2.522 2.523h-6.315z"/></svg>
               <span class="channel-name">Slack</span>
-              <span class="channel-toggle">&#9662;</span>
+              <span class="channel-badge">Connected</span>
+              <svg class="channel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div class="channel-body">
-              <div class="field" style="margin-top:0.75rem;">
+            <div class="channel-body" id="slackBody">
+              <div class="field">
                 <label class="field-label" for="slackBotToken">Bot token</label>
                 <input id="slackBotToken" type="password" placeholder="xoxb-..." autocomplete="off" />
               </div>
@@ -881,12 +1071,15 @@ app.get("/setup", (req, res) => {
     </div>
 
     <!-- ========== TAB: Tools ========== -->
-    <div class="tab-panel" id="panel-tools">
+    <div class="tab-panel" id="panel-tools" role="tabpanel">
 
       <!-- Debug Console -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Console</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Console
+          </div>
           <div class="card-desc">Run diagnostic commands against your instance.</div>
         </div>
         <div class="console-bar">
@@ -902,7 +1095,10 @@ app.get("/setup", (req, res) => {
             <option value="openclaw.version">openclaw --version</option>
           </select>
           <input id="consoleArg" placeholder="arg" />
-          <button class="btn btn-secondary" id="consoleRun">Run</button>
+          <button class="btn btn-secondary" id="consoleRun">
+            <span class="spinner"></span>
+            <span class="btn-label">Run</span>
+          </button>
         </div>
         <pre id="consoleOut"></pre>
       </div>
@@ -910,13 +1106,19 @@ app.get("/setup", (req, res) => {
       <!-- Config Editor -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Configuration</div>
-          <div class="card-desc" id="configPath">Edit the raw config file directly.</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+            Configuration
+          </div>
+          <div class="card-desc" id="configPath">Edit the raw config file.</div>
         </div>
-        <textarea id="configText" style="height:200px;font-family:var(--font-mono);font-size:0.75rem;resize:vertical;"></textarea>
+        <textarea id="configText" style="height:180px;font-family:var(--font-mono);font-size:0.6875rem;resize:vertical;line-height:1.6;tab-size:2;"></textarea>
         <div class="actions" style="margin-top:0.75rem;">
           <button class="btn btn-secondary" id="configReload">Reload</button>
-          <button class="btn btn-primary" id="configSave">Save & Restart</button>
+          <button class="btn btn-primary" id="configSave">
+            <span class="spinner"></span>
+            <span class="btn-label">Save & Restart</span>
+          </button>
         </div>
         <pre id="configOut"></pre>
       </div>
@@ -924,7 +1126,10 @@ app.get("/setup", (req, res) => {
       <!-- Backup -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Backup & Restore</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Backup & Restore
+          </div>
           <div class="card-desc">Export or import your instance data.</div>
         </div>
         <div class="actions">
@@ -936,7 +1141,10 @@ app.get("/setup", (req, res) => {
           <input id="importFile" type="file" accept=".tar.gz,application/gzip" />
         </div>
         <div class="actions">
-          <button class="btn btn-danger" id="importRun">Import & Overwrite</button>
+          <button class="btn btn-danger" id="importRun">
+            <span class="spinner"></span>
+            <span class="btn-label">Import & Overwrite</span>
+          </button>
         </div>
         <pre id="importOut"></pre>
       </div>
@@ -944,7 +1152,10 @@ app.get("/setup", (req, res) => {
       <!-- Pairing -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Device Pairing</div>
+          <div class="card-title">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3v4"/><path d="M8 3v4"/></svg>
+            Device Pairing
+          </div>
           <div class="card-desc">Approve DM access when dmPolicy is set to pairing.</div>
         </div>
         <div class="actions">
