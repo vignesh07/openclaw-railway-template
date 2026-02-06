@@ -139,9 +139,12 @@ async function waitForGatewayReady(opts = {}) {
     try {
       // Try the default Control UI base path, then fall back to legacy or root.
       const paths = ["/openclaw", "/clawdbot", "/"]; 
+      const headers = OPENCLAW_GATEWAY_TOKEN
+        ? { "Authorization": `Bearer ${OPENCLAW_GATEWAY_TOKEN}` }
+        : {};
       for (const p of paths) {
         try {
-          const res = await fetch(`${GATEWAY_TARGET}${p}`, { method: "GET" });
+          const res = await fetch(`${GATEWAY_TARGET}${p}`, { method: "GET", headers });
           // Any HTTP response means the port is open.
           if (res) return true;
         } catch {
@@ -164,28 +167,43 @@ async function startGateway() {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
   // The internal gateway is bound to loopback and only reachable via the
-  // wrapper proxy, so we disable auth on it entirely. The wrapper handles
-  // external authentication (GitHub OAuth). This avoids the "gateway token
-  // mismatch" error that occurs because the Control UI SPA authenticates at
-  // the WebSocket application-protocol level, which the proxy cannot inject.
+  // wrapper proxy. We keep auth as "token" with our known token so the
+  // wrapper can authenticate to the gateway. OpenClaw 2026.2.4+ rejects
+  // "none" as a valid gateway.auth.mode value.
   try {
     const cfgFile = configPath();
     const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
     let dirty = false;
 
     if (!cfg.gateway) cfg.gateway = {};
-    if (!cfg.gateway.auth) cfg.gateway.auth = {};
 
-    // Disable gateway auth -- the wrapper proxy is the only client.
-    if (cfg.gateway.auth.mode !== "none") {
-      cfg.gateway.auth.mode = "none";
-      delete cfg.gateway.auth.token;
+    // Ensure gateway auth uses token mode with the wrapper's known token.
+    if (cfg.gateway.authMode !== "token") {
+      cfg.gateway.authMode = "token";
+      dirty = true;
+    }
+
+    // Also patch the nested auth object if present (older config format).
+    if (cfg.gateway.auth) {
+      if (cfg.gateway.auth.mode && cfg.gateway.auth.mode !== "token") {
+        cfg.gateway.auth.mode = "token";
+        dirty = true;
+      }
+    }
+
+    // Ensure bind and port are correct.
+    if (cfg.gateway.bind !== "loopback") {
+      cfg.gateway.bind = "loopback";
+      dirty = true;
+    }
+    if (cfg.gateway.port !== INTERNAL_GATEWAY_PORT) {
+      cfg.gateway.port = INTERNAL_GATEWAY_PORT;
       dirty = true;
     }
 
     if (dirty) {
       fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2), "utf8");
-      console.log("[wrapper] patched gateway config: auth set to none (loopback only)");
+      console.log("[wrapper] patched gateway config: auth=token, bind=loopback, port=" + INTERNAL_GATEWAY_PORT);
     }
   } catch (err) {
     console.warn(`[wrapper] could not patch gateway config: ${err.message}`);
@@ -199,7 +217,9 @@ async function startGateway() {
     "--port",
     String(INTERNAL_GATEWAY_PORT),
     "--auth",
-    "none",
+    "token",
+    "--token",
+    OPENCLAW_GATEWAY_TOKEN,
   ];
 
   gatewayProc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
@@ -1320,11 +1340,10 @@ app.post("/setup/api/run", async (req, res) => {
 
   // Optional channel setup (only after successful onboarding, and only if the installed CLI supports it).
   if (ok) {
-    // The internal gateway is bound to loopback and only reachable through
-    // the wrapper proxy, so we disable auth entirely to avoid "token mismatch"
-    // errors. The wrapper's GitHub OAuth session protects all routes externally.
+    // The internal gateway uses token auth with the wrapper's known token.
+    // OpenClaw 2026.2.4+ rejects "none" as a gateway.auth.mode value.
     const cfgOpts = { timeoutMs: 10_000 };
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "none"]), cfgOpts);
+    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.authMode", "token"]), cfgOpts);
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]), cfgOpts);
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]), cfgOpts);
 
@@ -1741,6 +1760,14 @@ const proxy = httpProxy.createProxyServer({
   xfwd: true,
 });
 
+// Inject the gateway token into every proxied request so the gateway
+// accepts it (auth is now "token" mode instead of the invalid "none").
+proxy.on("proxyReq", (proxyReq) => {
+  if (OPENCLAW_GATEWAY_TOKEN) {
+    proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+});
+
 proxy.on("error", (err, _req, _res) => {
   console.error("[proxy]", err);
 });
@@ -1847,6 +1874,10 @@ server.on("upgrade", async (req, socket, head) => {
   } catch {
     socket.destroy();
     return;
+  }
+  // Inject gateway token for WebSocket upgrades.
+  if (OPENCLAW_GATEWAY_TOKEN) {
+    req.headers["authorization"] = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
   }
   proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
 });
