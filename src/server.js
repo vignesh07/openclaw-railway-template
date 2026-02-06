@@ -8,8 +8,14 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
+/** @type {Set<string>} */
 const warnedDeprecatedEnv = new Set();
 
+/**
+ * Prefer `primaryKey`, fall back to `deprecatedKey` with a one-time warning.
+ * @param {string} primaryKey
+ * @param {string} deprecatedKey
+ */
 function getEnvWithShim(primaryKey, deprecatedKey) {
   const primary = process.env[primaryKey]?.trim();
   if (primary) return primary;
