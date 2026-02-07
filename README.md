@@ -28,12 +28,20 @@ In Railway Template Composer:
 2) Add a **Volume** mounted at `/data`.
 3) Set the following variables:
 
-Recommended:
-- `SETUP_PASSWORD` — password to access `/setup`. If not set, a secure random password will be auto-generated and shown in the deployment logs.
+**⚠️ IMPORTANT: SETUP_PASSWORD Configuration**
+
+The `SETUP_PASSWORD` is **required** to access the `/setup` configuration panel. You have two options:
+
+- **Option 1 (Recommended for Railway)**: Leave `SETUP_PASSWORD` empty in your deployment variables. The system will **auto-generate a secure random password** on first startup and display it in the deployment logs. You can retrieve it from Railway's deployment logs.
+
+- **Option 2**: Set a custom `SETUP_PASSWORD` in Railway variables before deployment (minimum 16 characters recommended).
+
+**Required Variables:**
 - `OPENCLAW_STATE_DIR=/data/.openclaw`
 - `OPENCLAW_WORKSPACE_DIR=/data/workspace`
 
-Optional:
+**Optional Variables:**
+- `SETUP_PASSWORD` — Leave empty for auto-generation (recommended), or set a strong password (16+ characters)
 - `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
 
 Notes:
@@ -44,6 +52,8 @@ Notes:
 
 Then:
 - Visit `https://<your-app>.up.railway.app/setup`
+- If you used auto-generated password, check Railway deployment logs for the password
+- Enter the password when prompted
 - Complete setup
 - Visit `https://<your-app>.up.railway.app/` and `/openclaw`
 

@@ -49,14 +49,28 @@ Before deploying, ensure you have:
 
 Configure these variables in Railway:
 
-#### Recommended Variables
+#### ⚠️ IMPORTANT: SETUP_PASSWORD Configuration
+
+The `SETUP_PASSWORD` is **REQUIRED** to access the `/setup` configuration panel. You have two options:
+
+**Option 1 (Recommended for Railway):**
+```
+SETUP_PASSWORD=
+```
+Leave it **empty** or don't set it at all. The system will **auto-generate a secure random password** on first startup and display it in the deployment logs. You can retrieve it from Railway's deployment logs under the "Deployments" tab.
+
+**Option 2 (Custom Password):**
+```
+SETUP_PASSWORD=<your-strong-password-16-chars-minimum>
+```
+Set a custom password (minimum 16 characters recommended) before deployment.
+
+#### Required Variables
 
 ```
-SETUP_PASSWORD=<your-strong-password>
 OPENCLAW_STATE_DIR=/data/.openclaw
 OPENCLAW_WORKSPACE_DIR=/data/workspace
 ```
-The `SETUP_PASSWORD` protects your `/setup` configuration panel. If not set, a secure random password will be auto-generated and shown in the deployment logs.
 
 #### Optional Variables
 
@@ -75,23 +89,29 @@ If not provided, the system will auto-generate and persist a token.
 
 1. Click "Deploy" in Railway
 2. Wait for the build to complete (first build takes ~5-10 minutes)
-3. Check deployment logs for any issues
+3. **Check deployment logs** for the auto-generated `SETUP_PASSWORD` (if you didn't set a custom one)
+   - Go to Railway dashboard → Your service → Deployments tab
+   - Look for a message like: "Auto-generated password for /setup access: [password]"
+   - Save this password - you'll need it to access `/setup`
 
 ## Post-Deployment Setup
 
 ### Initial Configuration
 
 1. Visit `https://your-app.up.railway.app/setup`
-2. Enter your `SETUP_PASSWORD`
-3. Select authentication method:
+2. You'll be prompted to enter your `SETUP_PASSWORD`
+   - If you auto-generated it: Use the password from Railway deployment logs
+   - If you set a custom one: Use your custom password
+3. After entering the password, you'll access the setup wizard
+4. Select authentication method:
    - **OAuth** (Google, GitHub, etc.) - Recommended for production
    - **Simple** (username/password) - Quick start for testing
-4. Add your bot tokens:
+5. Add your bot tokens:
    - Telegram bot token (optional)
    - Discord bot token (optional)
    - Slack tokens (optional)
-5. Click "Run Setup"
-6. Wait for onboarding to complete
+6. Click "Run Setup"
+7. Wait for onboarding to complete
 
 ### Access OpenClaw
 
@@ -217,13 +237,17 @@ Each can have separate volumes and configurations.
 
 ## Security Best Practices
 
-1. **Use strong `SETUP_PASSWORD`**: At least 16 characters
-2. **Enable OAuth authentication**: More secure than simple auth
-3. **Regularly backup**: Use the export feature
-4. **Keep OpenClaw updated**: Rebuild with latest version periodically
-5. **Monitor logs**: Check Railway logs for suspicious activity
-6. **Rotate tokens**: Periodically rotate bot tokens
-7. **Use Railway's secrets**: Store sensitive values as environment variables
+1. **Set `SETUP_PASSWORD` before deployment**: Either:
+   - Let the system auto-generate a secure password (recommended for Railway)
+   - Set a custom strong password with at least 16 characters
+   - **Never** leave `/setup` without password protection
+2. **Save your auto-generated password**: If using auto-generation, save the password from deployment logs immediately
+3. **Enable OAuth authentication**: More secure than simple auth for the OpenClaw gateway
+4. **Regularly backup**: Use the export feature
+5. **Keep OpenClaw updated**: Rebuild with latest version periodically
+6. **Monitor logs**: Check Railway logs for suspicious activity
+7. **Rotate tokens**: Periodically rotate bot tokens
+8. **Use Railway's secrets**: Store sensitive values as environment variables
 
 ## Performance Optimization
 
