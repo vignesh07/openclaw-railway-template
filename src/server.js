@@ -56,7 +56,7 @@ function resolveSetupPassword() {
     // First run - generate new password
   }
 
-  const generated = crypto.randomBytes(32).toString("base64").replace(/[/+=]/g, "").slice(0, 32);
+  const generated = crypto.randomBytes(24).toString("base64").replace(/[/+=]/g, "");
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.writeFileSync(passwordPath, generated, { encoding: "utf8", mode: 0o600 });
@@ -785,7 +785,7 @@ app.get("/setup/password-prompt", (req, res) => {
         type="password" 
         id="password" 
         name="password" 
-        autocomplete="off"
+        autocomplete="current-password"
         autocorrect="off"
         autocapitalize="off"
         spellcheck="false"
@@ -799,7 +799,34 @@ app.get("/setup/password-prompt", (req, res) => {
 </html>`);
 });
 
-app.post("/setup/verify-password", express.urlencoded({ extended: false }), (req, res) => {
+// Simple rate limiter for password verification (prevent brute force)
+const passwordAttempts = new Map();
+const MAX_ATTEMPTS = 5;
+const ATTEMPT_WINDOW = 15 * 60 * 1000; // 15 minutes
+
+function rateLimitPassword(req, res, next) {
+  const clientId = req.ip || req.connection.remoteAddress || "unknown";
+  const now = Date.now();
+  
+  if (!passwordAttempts.has(clientId)) {
+    passwordAttempts.set(clientId, []);
+  }
+  
+  const attempts = passwordAttempts.get(clientId);
+  // Remove old attempts outside the window
+  const recentAttempts = attempts.filter(time => now - time < ATTEMPT_WINDOW);
+  passwordAttempts.set(clientId, recentAttempts);
+  
+  if (recentAttempts.length >= MAX_ATTEMPTS) {
+    return res.redirect("/setup/password-prompt?error=" + encodeURIComponent("Too many attempts. Please try again later."));
+  }
+  
+  // Record this attempt
+  recentAttempts.push(now);
+  next();
+}
+
+app.post("/setup/verify-password", rateLimitPassword, express.urlencoded({ extended: false }), (req, res) => {
   const submittedPassword = req.body.password || "";
   
   // Use timing-safe comparison to prevent timing attacks
