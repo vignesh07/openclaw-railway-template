@@ -67,14 +67,10 @@ ENV OPENCLAW_PUBLIC_PORT=8080
 ENV PORT=8080
 EXPOSE 8080
 # When STATE_DIR points outside ~/.openclaw, symlink so components that use
-# the default home path still write to the volume.  Also symlink ~/.local so
-# tools installed at runtime (Claude Code, etc.) survive redeploys.
+# the default home path still write to the volume.
 CMD ["sh", "-c", "\
   STATE_DIR=\"${OPENCLAW_STATE_DIR:-$CLAWDBOT_STATE_DIR}\"; \
   if [ -n \"$STATE_DIR\" ] && [ \"$HOME/.openclaw\" != \"$STATE_DIR\" ]; then \
     mkdir -p \"$STATE_DIR\" && ln -sfn \"$STATE_DIR\" \"$HOME/.openclaw\"; \
-  fi; \
-  if [ -d /data ]; then \
-    mkdir -p /data/.local && ln -sfn /data/.local \"$HOME/.local\"; \
   fi; \
   exec node src/server.js"]

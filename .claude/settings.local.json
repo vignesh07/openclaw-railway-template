@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__railway-mcp-server__list-deployments",
+      "Bash(railway up:*)"
+    ]
+  }
+}
