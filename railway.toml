@@ -1,7 +1,7 @@
 [build]
       builder = "dockerfile"
     
-    [deploy
+    [deploy]
       restartPolicyType = "on_failure"
     
     [variables]
