@@ -45,7 +45,29 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
+    git \
+    # GTK deps for Camoufox browser
+    libgtk-3-0 \
+    libdbus-glib-1-2 \
+    libasound2 \
+    libxcomposite1 \
+    libxrandr2 \
+    libxtst6 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libx11-xcb1 \
   && rm -rf /var/lib/apt/lists/*
+
+# Build skill-search from source (needs Rust)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+  && . /root/.cargo/env \
+  && git clone --depth 1 https://github.com/jo-inc/safe-skill-search.git /tmp/skill-search \
+  && cd /tmp/skill-search \
+  && cargo build --release \
+  && mv target/release/safe-skill-search /usr/local/bin/skill-search \
+  && chmod +x /usr/local/bin/skill-search \
+  && rm -rf /tmp/skill-search /root/.cargo /root/.rustup
 
 WORKDIR /app
 
