@@ -45,7 +45,14 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
+    git \
   && rm -rf /var/lib/apt/lists/*
+
+# Install safe-skill-search (skill registry search tool)
+RUN curl -fsSL https://github.com/jo-inc/safe-skill-search/releases/latest/download/safe-skill-search-x86_64-unknown-linux-gnu.tar.gz \
+  | tar -xz -C /usr/local/bin \
+  && chmod +x /usr/local/bin/safe-skill-search
 
 WORKDIR /app
 
