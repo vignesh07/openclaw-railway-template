@@ -55,7 +55,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
   && git clone --depth 1 https://github.com/jo-inc/safe-skill-search.git /tmp/skill-search \
   && cd /tmp/skill-search \
   && cargo build --release \
-  && mv target/release/skill-search /usr/local/bin/ \
+  && mv target/release/safe-skill-search /usr/local/bin/skill-search \
   && chmod +x /usr/local/bin/skill-search \
   && rm -rf /tmp/skill-search /root/.cargo /root/.rustup
 
