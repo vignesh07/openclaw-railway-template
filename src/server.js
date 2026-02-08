@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import nodemailer from "nodemailer";
 
 import express from "express";
 import session from "express-session";
@@ -87,37 +86,24 @@ function resolveSetupPassword() {
   return null; // Signal that user must create a password via the UI
 }
 
-// Configure email transporter for password reset
-async function setupEmailTransporter() {
-  const smtpHost = process.env.SMTP_HOST?.trim();
-  const smtpPort = Number.parseInt(process.env.SMTP_PORT || "587", 10);
-  const smtpUser = process.env.SMTP_USER?.trim();
-  const smtpPass = process.env.SMTP_PASS?.trim();
-  const smtpFrom = process.env.SMTP_FROM?.trim() || smtpUser;
+// Configure password reset via external webhook or console logging
+function setupEmailTransporter() {
+  const webhookUrl = process.env.PASSWORD_RESET_WEBHOOK_URL?.trim();
+  const consoleMode = process.env.PASSWORD_RESET_CONSOLE_MODE === "true";
 
-  if (!smtpHost || !smtpUser || !smtpPass) {
-    console.log("[email] SMTP not configured. Password reset emails will not be sent.");
-    return null;
+  if (webhookUrl) {
+    console.log("[reset] Using webhook URL for password resets:", webhookUrl);
+  } else if (consoleMode) {
+    console.log("[reset] Console mode enabled - reset links will be logged");
+  } else {
+    console.log("[reset] No email configured. Users can only reset via admin-provided tokens.");
   }
 
-  const transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    auth: { user: smtpUser, pass: smtpPass },
-  });
-
-  try {
-    await transporter.verify();
-    console.log("[email] SMTP connection verified");
-    return transporter;
-  } catch (err) {
-    console.error("[email] SMTP verification failed:", err);
-    return null;
-  }
+  return { webhookUrl, consoleMode };
 }
 
-let emailTransporter = null;
+let emailConfig = setupEmailTransporter();
+
 
 let SETUP_PASSWORD = resolveSetupPassword();
 
@@ -511,11 +497,6 @@ app.use(express.json({ limit: "1mb" }));
 
 // Session middleware
 app.use(session(SESSION_CONFIG));
-
-// Initialize email transporter on startup
-setupEmailTransporter().then((transporter) => {
-  emailTransporter = transporter;
-});
 
 // ---------- Auth routes ----------
 
@@ -1225,15 +1206,11 @@ app.get("/setup/forgot-password", (req, res) => {
 </html>`);
 });
 
-app.post("/setup/request-reset", express.urlencoded({ extended: false }), async (req, res) => {
+app.post("/setup/request-reset", express.urlencoded({ extended: false }), (req, res) => {
   const email = (req.body.email || "").trim().toLowerCase();
 
   if (!email) {
     return res.redirect("/setup/forgot-password?error=" + encodeURIComponent("Email is required"));
-  }
-
-  if (!emailTransporter) {
-    return res.redirect("/setup/forgot-password?error=" + encodeURIComponent("Email service not configured. Please contact your administrator."));
   }
 
   // Generate a reset token
@@ -1244,29 +1221,37 @@ app.post("/setup/request-reset", express.urlencoded({ extended: false }), async 
   resetTokens[token] = { email, expiresAt };
   saveResetTokens(resetTokens);
 
-  // Send reset email
+  // Generate reset URL
   const resetUrl = `${getBaseUrl(req)}/setup/reset-password?token=${encodeURIComponent(token)}`;
+  const resetMessage = `Password reset link: ${resetUrl}`;
 
-  try {
-    await emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: email,
-      subject: "Password Reset Request - OpenClaw Setup",
-      html: `
-        <h2>Password Reset Request</h2>
-        <p>You requested a password reset for your OpenClaw setup.</p>
-        <p><a href="${escapeHtml(resetUrl)}" style="background: #3b82f6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block;">Reset Password</a></p>
-        <p>This link expires in 1 hour.</p>
-        <p>If you didn't request this, you can safely ignore this email.</p>
-      `,
-      text: `Click here to reset your password: ${resetUrl}\n\nThis link expires in 1 hour.`,
+  // Send via webhook if configured
+  if (emailConfig.webhookUrl) {
+    fetch(emailConfig.webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: email,
+        subject: "Password Reset Request - OpenClaw Setup",
+        html: `<h2>Password Reset Request</h2><p>Click to reset: <a href="${escapeHtml(resetUrl)}">Reset Password</a></p><p>This link expires in 1 hour.</p>`,
+        resetUrl,
+        expiresAt,
+      }),
+    }).catch((err) => {
+      console.error("[reset] Webhook send error:", err.message);
     });
 
-    res.redirect("/setup/forgot-password?message=" + encodeURIComponent("Reset link sent to your email. Check your inbox."));
-  } catch (err) {
-    console.error("[reset] Email send error:", err);
-    res.redirect("/setup/forgot-password?error=" + encodeURIComponent("Failed to send email. Please try again later."));
+    return res.redirect("/setup/forgot-password?message=" + encodeURIComponent("Reset link sent. Check your email."));
   }
+
+  // Console mode: log the reset link
+  if (emailConfig.consoleMode) {
+    console.log(`\n[reset] PASSWORD RESET LINK FOR ${email}:\n${resetUrl}\n`);
+    return res.redirect("/setup/forgot-password?message=" + encodeURIComponent("Reset link logged to console. Contact your administrator."));
+  }
+
+  // No email service configured
+  res.redirect("/setup/forgot-password?error=" + encodeURIComponent("Email service not configured. Contact your administrator."));
 });
 
 app.get("/setup/reset-password", (req, res) => {
