@@ -13,7 +13,6 @@ Use this checklist before publishing or updating the Railway template.
 - [ ] `RAILWAY_DEPLOYMENT.md` and `DOCKER_TO_RAILWAY.md` cross-links are valid.
 - [ ] `railway.toml` values match documented startup and health-check expectations.
 - [ ] `IMPLEMENTATION_SUMMARY.md` reflects current repository state.
-- [ ] Emergency bypass variables are unset in production (`TEMP_ADMIN_BYPASS_*` removed unless actively needed).
 
 ## Validation Commands
 Run from repository root:
