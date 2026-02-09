@@ -91,8 +91,10 @@ For secure deployments, set `AUTH_PASSWORD` to protect access to your instance.
 
 Notes:
 - This template pins OpenClaw to a known-good version by default via Docker build arg `OPENCLAW_GIT_REF`.
+- **Backward compatibility:** The wrapper includes a shim for `CLAWDBOT_*` environment variables (logs a deprecation warning when used). `MOLTBOT_*` variables are **not** shimmed — this repo never shipped with MOLTBOT prefixes, so no existing deployments rely on them.
 
 4) Enable **Public Networking** (HTTP). Railway will assign a domain.
+   - This service is configured to listen on port `8080` (including custom domains).
 5) Deploy.
 
 Then:
