@@ -1,3 +1,19 @@
+# --- build gogcli (gog) ---
+FROM golang:1.22-bookworm AS gog_builder
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git \
+    make \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/steipete/gogcli.git
+WORKDIR /src/gogcli
+RUN make
+
+
 # Build openclaw from source to avoid npm packaging gaps (some dist files are not shipped).
 FROM node:22-bookworm AS openclaw-build
 
@@ -42,6 +58,11 @@ RUN pnpm ui:install && pnpm ui:build
 FROM node:22-bookworm
 ENV NODE_ENV=production
 
+# Defaults (Railway env-vars can override these)
+ENV OPENCLAW_STATE_DIR=/data/.openclaw
+ENV OPENCLAW_WORKSPACE_DIR=/data/workspace
+ENV XDG_CONFIG_HOME=/data/.config
+
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -55,6 +76,10 @@ RUN npm install --omit=dev && npm cache clean --force
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
+
+# Install gog (gogcli) binary into PATH
+COPY --from=gog_builder /src/gogcli/bin/gog /usr/local/bin/gog
+RUN chmod +x /usr/local/bin/gog
 
 # Provide an openclaw executable
 RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
