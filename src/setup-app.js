@@ -193,7 +193,34 @@
     btn.disabled = loading;
   }
 
-  function httpJson(url, opts) {
+  function normalizeApiError(status, body, fallbackMessage) {
+    var err = (body && body.error) || null;
+    if (err && typeof err === 'object') {
+      return {
+        status: status,
+        code: err.code || 'UNKNOWN',
+        message: err.message || fallbackMessage || 'Request failed',
+        action: err.action || '',
+        details: err.details || null
+      };
+    }
+    return {
+      status: status,
+      code: 'HTTP_' + status,
+      message: fallbackMessage || 'HTTP ' + status,
+      action: '',
+      details: body || null
+    };
+  }
+
+  function formatApiError(err) {
+    if (!err) return 'Unknown error';
+    var msg = err.message || String(err);
+    if (err.action) msg += ' Next: ' + err.action;
+    return msg;
+  }
+
+  function requestJson(url, opts) {
     opts = opts || {};
     opts.credentials = 'same-origin';
     return fetch(url, opts).then(function (res) {
@@ -201,12 +228,31 @@
         window.location.href = '/auth/login';
         return new Promise(function () {});
       }
-      if (!res.ok) {
-        return res.text().then(function (t) {
-          throw new Error('HTTP ' + res.status + ': ' + (t || res.statusText));
-        });
+      return res.text().then(function (text) {
+        var parsed = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch (_e) {}
+        if (!res.ok) throw normalizeApiError(res.status, parsed || text, 'Request failed');
+        return parsed || {};
+      });
+    });
+  }
+
+  function requestText(url, opts) {
+    opts = opts || {};
+    opts.credentials = 'same-origin';
+    return fetch(url, opts).then(function (res) {
+      if (res.status === 401) {
+        window.location.href = '/auth/login';
+        return new Promise(function () {});
       }
-      return res.json();
+      return res.text().then(function (text) {
+        if (!res.ok) {
+          var parsed = null;
+          try { parsed = text ? JSON.parse(text) : null; } catch (_e) {}
+          throw normalizeApiError(res.status, parsed || text, text || 'Request failed');
+        }
+        return text;
+      });
     });
   }
 
@@ -256,7 +302,7 @@
   }
 
   function runPreflight(payload, quiet) {
-    return httpJson('/setup/api/preflight', {
+    return requestJson('/setup/api/preflight', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload || buildPayload())
@@ -276,7 +322,7 @@
   // ======== Status ========
   function refreshStatus() {
     setStatus('Checking...', 'loading');
-    return httpJson('/setup/api/status').then(function (j) {
+    return requestJson('/setup/api/status').then(function (j) {
       var ver = j.openclawVersion ? j.openclawVersion : '';
       if (statusVersion) statusVersion.textContent = ver ? 'v' + ver : '';
       if (j.configured) {
@@ -322,39 +368,32 @@
       setStage('deploy');
       appendLog('[deploy] Running OpenClaw onboarding...\n');
 
-      return fetch('/setup/api/run', {
+      return requestJson('/setup/api/run', {
         method: 'POST',
-        credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload)
       });
-    }).then(function (res) {
-      if (!res) return null;
-      if (res.status === 401) { window.location.href = '/auth/login'; return new Promise(function () {}); }
-      return res.text();
-    }).then(function (text) {
-      if (text == null) return;
-      var j;
-      try { j = JSON.parse(text); } catch (_e) { j = { ok: false, output: text }; }
+    }).then(function (j) {
+      if (!j) return;
       appendLog(j.output || JSON.stringify(j, null, 2));
 
       setStage('verify');
       return refreshStatus().then(function () {
-        if (j.ok) {
-          toast('Configuration deployed successfully', 'success');
-          appendLog('\n[verify] Setup complete. Next: open / and /openclaw to confirm routing.\n');
-        } else {
-          setStage('deploy', 'error');
-          toast('Deploy finished with warnings. Check actionable log output.', 'info');
-        }
+        toast('Configuration deployed successfully', 'success');
+        appendLog('\n[verify] Setup complete. Next: open / and /openclaw to confirm routing.\n');
       });
     }).catch(function (e) {
-      appendLog('\nError: ' + String(e) + '\n');
-      if (String(e).toLowerCase().indexOf('preflight') >= 0) {
-        toast('Fix preflight issues, then retry deployment.', 'error');
+      var msg = formatApiError(e);
+      appendLog('\nError: ' + msg + '\n');
+      if (e && e.details && e.details.outputPreview) {
+        appendLog('\n--- Output preview ---\n' + e.details.outputPreview + '\n');
+      }
+      if ((e && e.code === 'PRECONDITION_FAILED') || String(msg).toLowerCase().indexOf('preflight') >= 0) {
+        setStage('validate', 'error');
+        toast('Fix validation issues, then retry deployment.', 'error');
       } else {
         setStage('deploy', 'error');
-        toast('Deployment failed. Review log and retry.', 'error');
+        toast(msg, 'error');
       }
     }).finally(function () {
       setLoading(runBtn, false);
@@ -366,8 +405,7 @@
   document.getElementById('reset').addEventListener('click', function () {
     if (!confirm('Reset configuration? This deletes the config file so setup can run again.')) return;
     showLog('Resetting...\n');
-    fetch('/setup/api/reset', { method: 'POST', credentials: 'same-origin' })
-      .then(function (res) { if (res.status === 401) { window.location.href = '/auth/login'; return new Promise(function () {}); } return res.text(); })
+    requestText('/setup/api/reset', { method: 'POST' })
       .then(function (t) {
         appendLog(t + '\n');
         toast('Configuration reset', 'info');
@@ -388,7 +426,7 @@
     setLoading(consoleRunEl, true);
     if (consoleOutEl) { consoleOutEl.textContent = 'Running ' + cmd + '...\n'; consoleOutEl.classList.add('visible'); }
 
-    return httpJson('/setup/api/console/run', {
+    return requestJson('/setup/api/console/run', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ cmd: cmd, arg: arg })
@@ -410,7 +448,7 @@
   function loadConfigRaw() {
     if (!configTextEl) return;
     if (configOutEl) configOutEl.textContent = '';
-    return httpJson('/setup/api/config/raw').then(function (j) {
+    return requestJson('/setup/api/config/raw').then(function (j) {
       if (configPathEl) {
         configPathEl.textContent = (j.path || 'Config file') + (j.exists ? '' : ' (not yet created)');
       }
@@ -427,7 +465,7 @@
     setLoading(configSaveEl, true);
     if (configOutEl) { configOutEl.textContent = 'Saving...\n'; configOutEl.classList.add('visible'); }
 
-    return httpJson('/setup/api/config/raw', {
+    return requestJson('/setup/api/config/raw', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ content: configTextEl.value })

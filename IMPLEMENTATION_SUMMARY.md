@@ -98,4 +98,4 @@ This recommendation balances speed and safety: documentation maturity is now suf
 
 ## Next Execution Recommendation
 
-P1 onboarding UX improvements are now implemented in `/setup` with preflight checks, stage-based progress (Validate → Configure → Deploy → Verify), and actionable error guidance. Next, validate production behavior with the release checklist and monitor setup completion metrics.
+P1 onboarding UX improvements are now implemented in `/setup` with preflight checks, stage-based progress (Validate → Configure → Deploy → Verify), and structured error handling (`code` + `message` + `action`) for faster recovery. Next, validate production behavior with the release checklist and monitor setup completion metrics.

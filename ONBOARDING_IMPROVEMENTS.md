@@ -75,3 +75,9 @@ This roadmap outlines practical changes to make first-run setup more robust, int
 - [ ] Confirm stage progress advances through **Validate → Configure → Deploy → Verify**.
 - [ ] Confirm success route checks: `/setup`, `/`, `/openclaw`.
 - [ ] If deploy fails, use stage-specific errors to retry without restarting from scratch.
+
+
+## Implemented Debug/Resilience Upgrades
+
+- Structured setup API errors now include machine-readable `code`, user-safe `message`, and a concrete `action`.
+- Preflight failures and onboarding failures are surfaced in `/setup` with actionable next steps and output previews when available.
