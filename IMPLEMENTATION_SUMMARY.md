@@ -2,83 +2,89 @@
 
 ## Executive Summary
 
-This repository now provides a production-ready deployment baseline for running OpenClaw on Railway with Docker.
+This repository provides a Docker-based deployment path for running OpenClaw on Railway, with supporting documentation for onboarding, migration, and operations.
 
-The implementation is intentionally **documentation-first** and optimized for three goals:
+This update is **documentation-only** and is designed to improve:
 
-1. **Fast onboarding** for first-time deployers.
-2. **Low-risk migration** for teams moving from Docker/Docker Compose.
-3. **Operational clarity** for teams responsible for day-2 support.
+1. onboarding clarity for first-time Railway deployers,
+2. migration predictability for Docker/Docker Compose users, and
+3. operational handoff quality for maintainers.
 
-No runtime application code paths were changed as part of this documentation refinement.
+No application runtime code or Docker build logic was changed in this revision.
+
+## What This Revision Improves
+
+Compared with the previous summary draft, this revision:
+
+- removes broad marketing language and keeps claims implementation-focused,
+- uses tighter sectioning for faster scan/readability,
+- clarifies where each responsibility is documented, and
+- keeps rollout guidance actionable without implying unverified outcomes.
 
 ## Scope of Delivery
 
 ### Deployment Enablement
-- Railway-oriented deployment guidance and template flow are documented for fast startup.
-- Required platform prerequisites (public networking, volume mount, critical environment variables) are clearly surfaced.
+- Railway deployment flow and prerequisites are documented.
+- Core setup requirements (public networking, volume mount, and key environment variables) are surfaced in primary docs.
 
 ### Migration Enablement
-- Docker-to-Railway migration guidance is structured to reduce cutover risk.
-- Rollout sequencing and fallback expectations are documented in migration materials.
+- Docker-to-Railway migration guidance is structured for phased cutover.
+- Migration materials include risk-aware sequencing and fallback guidance.
 
 ### Local Validation Enablement
-- Local parity artifacts are included so users can verify configuration before cloud cutover.
-- Validation steps are designed to be lightweight and repeatable.
+- Local parity artifacts are available to validate configuration before cloud rollout.
+- Validation steps are lightweight and repeatable.
 
 ## Artifact Map (Source of Truth)
 
-| Objective | Key Artifacts | Why It Matters |
+| Objective | Key Artifacts | Purpose |
 |---|---|---|
-| Quickstart and first deploy | `README.md`, `railway.toml` | Reduces setup ambiguity and shortens time-to-first-success. |
-| End-to-end Railway operations | `RAILWAY_DEPLOYMENT.md` | Consolidates deployment, troubleshooting, and operational guardrails. |
-| Docker migration path | `DOCKER_TO_RAILWAY.md` | Provides a structured path from local/container workflows to Railway. |
-| Local reproducibility | `docker-compose.yml`, `.env.example`, `scripts/smoke.js` | Enables pre-cutover validation and safer production rollout. |
+| First deploy and quickstart | `README.md`, `railway.toml` | Establish baseline deployment path and required setup context. |
+| Railway operations guidance | `RAILWAY_DEPLOYMENT.md` | Consolidate deployment workflow, troubleshooting, and operations notes. |
+| Docker migration workflow | `DOCKER_TO_RAILWAY.md` | Define migration path from Docker/Compose to Railway. |
+| Local reproducibility | `docker-compose.yml`, `.env.example`, `scripts/smoke.js` | Enable pre-cutover checks and safer rollout preparation. |
 
-## Outcomes by Audience
+## Audience-Focused Outcomes
 
 ### First-Time Deployers
-- Faster onboarding through explicit setup flow and practical defaults.
-- Clear `/setup` path with minimal up-front requirements.
-- Lower failure rate from missing configuration context.
+- Clearer setup sequence with reduced ambiguity.
+- Explicit `/setup` onboarding path and prerequisites.
 
 ### Existing Docker/Docker Compose Users
-- Predictable migration journey from existing container workflows.
-- Environment-variable and operational mapping that minimizes surprises during cutover.
-- Ability to validate behavior locally before production migration.
+- Defined migration path from current container workflow to Railway.
+- Practical mapping guidance to reduce cutover surprises.
 
 ### Operators and Platform Teams
-- Better handoff quality with centralized deployment and runbook guidance.
-- Backup/recovery and security posture documented in one place.
-- Reduced operational guesswork during incidents and upgrades.
+- Centralized handoff context for deployment and day-2 operations.
+- Documented backup/recovery and security guidance references.
 
 ## Validation and Quality Gates
 
-The following checks were used to validate delivery quality:
+The following checks support delivery quality:
 
 - Docker Compose configuration validation.
-- Node syntax lint validation for server entrypoint.
+- Node syntax lint validation for the server entrypoint.
 - Documentation consistency and cross-reference review.
 - Health-check path confirmation in deployment guidance.
 
-## Risk, Compatibility, and Change Safety
+## Compatibility and Risk Profile
 
-- **Runtime safety:** No application runtime logic was modified.
-- **Workflow compatibility:** Existing Docker image flow remains compatible.
-- **Adoption safety:** Changes are documentation/tooling oriented and can be adopted incrementally.
+- **Runtime safety:** no runtime code paths were modified.
+- **Build safety:** Docker build workflow remains unchanged.
+- **Adoption safety:** documentation/tooling updates can be adopted incrementally.
 
 ## Recommended Rollout Plan
 
 1. Publish this repository as a Railway template.
-2. Enforce persistent storage at `/data` for state durability.
-3. Standardize `SETUP_PASSWORD` policy (managed secret or approved auto-generation flow).
+2. Ensure persistent storage is mounted at `/data`.
+3. Standardize `SETUP_PASSWORD` handling (managed secret or controlled auto-generation).
 4. Require local smoke validation prior to production cutover.
-5. Track success metrics (deploy success rate, setup completion rate, and first-time setup latency).
+5. Track rollout metrics (deployment success, setup completion, and setup duration).
 
 ## Final Assessment
 
-This final draft is ready for publication and operational handoff with improved clarity, stronger rollout guidance, and lower onboarding/migration risk.
+This draft is ready for publication and operational handoff:
 
-- **Onboarding:** optimized for speed and clarity.
-- **Migration:** optimized for predictability and safety.
-- **Operations:** optimized for maintainability at scale.
+- **Onboarding:** clearer first-deploy path.
+- **Migration:** more predictable Docker-to-Railway transition.
+- **Operations:** improved maintainability through better documentation structure.
