@@ -622,7 +622,8 @@ function isTempBypassEnabled() {
 }
 
 function getBypassClientKey(req) {
-  return String(req.headers["x-forwarded-for"] || req.ip || "unknown").split(",")[0].trim();
+  const trustedIp = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown";
+  return String(trustedIp).replace(/^::ffff:/, "").trim();
 }
 
 function checkTempBypassRateLimit(req) {
