@@ -69,6 +69,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
   && chmod +x /usr/local/bin/skill-search \
   && rm -rf /tmp/skill-search /root/.cargo /root/.rustup
 
+# `openclaw update` expects pnpm. Provide it in the runtime image.
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
 WORKDIR /app
 
 # Wrapper deps
