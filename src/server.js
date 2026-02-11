@@ -136,6 +136,10 @@ function isConfigured() {
 let gatewayProc = null;
 let gatewayStarting = null;
 
+// Debug breadcrumbs for common Railway failures (502 / "Application failed to respond").
+let lastGatewayError = null;
+let lastGatewayExit = null;
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -194,12 +198,16 @@ async function startGateway() {
   });
 
   gatewayProc.on("error", (err) => {
-    console.error(`[gateway] spawn error: ${String(err)}`);
+    const msg = `[gateway] spawn error: ${String(err)}`;
+    console.error(msg);
+    lastGatewayError = msg;
     gatewayProc = null;
   });
 
   gatewayProc.on("exit", (code, signal) => {
-    console.error(`[gateway] exited code=${code} signal=${signal}`);
+    const msg = `[gateway] exited code=${code} signal=${signal}`;
+    console.error(msg);
+    lastGatewayExit = { code, signal, at: new Date().toISOString() };
     gatewayProc = null;
   });
 }
@@ -209,10 +217,17 @@ async function ensureGatewayRunning() {
   if (gatewayProc) return { ok: true };
   if (!gatewayStarting) {
     gatewayStarting = (async () => {
-      await startGateway();
-      const ready = await waitForGatewayReady({ timeoutMs: 20_000 });
-      if (!ready) {
-        throw new Error("Gateway did not become ready in time");
+      try {
+        lastGatewayError = null;
+        await startGateway();
+        const ready = await waitForGatewayReady({ timeoutMs: 20_000 });
+        if (!ready) {
+          throw new Error("Gateway did not become ready in time");
+        }
+      } catch (err) {
+        const msg = `[gateway] start failure: ${String(err)}`;
+        lastGatewayError = msg;
+        throw err;
       }
     })().finally(() => {
       gatewayStarting = null;
@@ -666,15 +681,24 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
 app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
   const v = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
   const help = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
+
   res.json({
     wrapper: {
       node: process.version,
       port: PORT,
+      publicPortEnv: process.env.PORT || null,
       stateDir: STATE_DIR,
       workspaceDir: WORKSPACE_DIR,
-      configPath: configPath(),
+      configured: isConfigured(),
+      configPathResolved: configPath(),
+      configPathCandidates: typeof resolveConfigCandidates === "function" ? resolveConfigCandidates() : null,
+      internalGatewayHost: INTERNAL_GATEWAY_HOST,
+      internalGatewayPort: INTERNAL_GATEWAY_PORT,
+      gatewayTarget: GATEWAY_TARGET,
       gatewayTokenFromEnv: Boolean(process.env.OPENCLAW_GATEWAY_TOKEN?.trim()),
       gatewayTokenPersisted: fs.existsSync(path.join(STATE_DIR, "gateway.token")),
+      lastGatewayError,
+      lastGatewayExit,
       railwayCommit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
     },
     openclaw: {
@@ -1014,7 +1038,15 @@ app.use(async (req, res) => {
     try {
       await ensureGatewayRunning();
     } catch (err) {
-      return res.status(503).type("text/plain").send(`Gateway not ready: ${String(err)}`);
+      const hint = [
+        "Gateway not ready.",
+        String(err),
+        lastGatewayError ? `\n${lastGatewayError}` : "",
+        "\nTroubleshooting:",
+        "- Visit /setup and check the Debug Console",
+        "- Visit /setup/api/debug for config + gateway diagnostics",
+      ].join("\n");
+      return res.status(503).type("text/plain").send(hint);
     }
   }
 
