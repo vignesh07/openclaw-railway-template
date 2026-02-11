@@ -139,6 +139,8 @@ let gatewayStarting = null;
 // Debug breadcrumbs for common Railway failures (502 / "Application failed to respond").
 let lastGatewayError = null;
 let lastGatewayExit = null;
+let lastDoctorOutput = null;
+let lastDoctorAt = null;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -212,6 +214,21 @@ async function startGateway() {
   });
 }
 
+async function runDoctorBestEffort() {
+  // Avoid spamming `openclaw doctor` in a crash loop.
+  const now = Date.now();
+  if (lastDoctorAt && now - lastDoctorAt < 5 * 60 * 1000) return;
+  lastDoctorAt = now;
+
+  try {
+    const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor"]));
+    const out = redactSecrets(r.output || "");
+    lastDoctorOutput = out.length > 50_000 ? out.slice(0, 50_000) + "\n... (truncated)\n" : out;
+  } catch (err) {
+    lastDoctorOutput = `doctor failed: ${String(err)}`;
+  }
+}
+
 async function ensureGatewayRunning() {
   if (!isConfigured()) return { ok: false, reason: "not configured" };
   if (gatewayProc) return { ok: true };
@@ -227,6 +244,8 @@ async function ensureGatewayRunning() {
       } catch (err) {
         const msg = `[gateway] start failure: ${String(err)}`;
         lastGatewayError = msg;
+        // Collect extra diagnostics to help users file issues.
+        await runDoctorBestEffort();
         throw err;
       }
     })().finally(() => {
@@ -306,6 +325,7 @@ app.get("/healthz", async (_req, res) => {
       reachable: gatewayReachable,
       lastError: lastGatewayError,
       lastExit: lastGatewayExit,
+      lastDoctorAt,
     },
   });
 });
@@ -812,6 +832,8 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
       gatewayTokenPersisted: fs.existsSync(path.join(STATE_DIR, "gateway.token")),
       lastGatewayError,
       lastGatewayExit,
+      lastDoctorAt,
+      lastDoctorOutput,
       railwayCommit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
     },
     openclaw: {
