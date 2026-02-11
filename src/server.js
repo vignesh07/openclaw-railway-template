@@ -100,16 +100,34 @@ function clawArgs(args) {
   return [OPENCLAW_ENTRY, ...args];
 }
 
+function resolveConfigCandidates() {
+  const explicit = getEnvWithShim("OPENCLAW_CONFIG_PATH", "CLAWDBOT_CONFIG_PATH");
+  if (explicit) return [explicit];
+
+  // Prefer the newest canonical name, but fall back to legacy filenames if present.
+  return [
+    path.join(STATE_DIR, "openclaw.json"),
+    path.join(STATE_DIR, "moltbot.json"),
+    path.join(STATE_DIR, "clawdbot.json"),
+  ];
+}
+
 function configPath() {
-  return (
-    getEnvWithShim("OPENCLAW_CONFIG_PATH", "CLAWDBOT_CONFIG_PATH") ||
-    path.join(STATE_DIR, "openclaw.json")
-  );
+  const candidates = resolveConfigCandidates();
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // ignore
+    }
+  }
+  // Default to canonical even if it doesn't exist yet.
+  return candidates[0] || path.join(STATE_DIR, "openclaw.json");
 }
 
 function isConfigured() {
   try {
-    return fs.existsSync(configPath());
+    return resolveConfigCandidates().some((candidate) => fs.existsSync(candidate));
   } catch {
     return false;
   }
