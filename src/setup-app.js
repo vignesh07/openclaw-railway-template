@@ -241,6 +241,62 @@
     };
   }
 
+  // Device pairing helper
+  var devicesRefreshBtn = document.getElementById('devicesRefresh');
+  var devicesListEl = document.getElementById('devicesList');
+
+  function approveDevice(requestId) {
+    if (!requestId) return;
+    if (!confirm('Approve device request ' + requestId + '?')) return;
+    if (devicesListEl) devicesListEl.textContent = 'Approving ' + requestId + '...';
+
+    return httpJson('/setup/api/devices/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: requestId })
+    }).then(function (j) {
+      if (devicesListEl) devicesListEl.textContent = j.output || 'Approved.';
+      return refreshStatus();
+    }).catch(function (e) {
+      if (devicesListEl) devicesListEl.textContent = 'Error: ' + String(e);
+    });
+  }
+
+  function refreshDevices() {
+    if (!devicesListEl) return;
+    devicesListEl.textContent = 'Loading pending devices...';
+    return httpJson('/setup/api/devices/pending').then(function (j) {
+      var ids = j.requestIds || [];
+      if (!ids.length) {
+        devicesListEl.textContent = 'No pending device requests found.';
+        return;
+      }
+      devicesListEl.innerHTML = '';
+      for (var i = 0; i < ids.length; i++) {
+        (function (id) {
+          var row = document.createElement('div');
+          row.style.marginTop = '0.25rem';
+          var btn = document.createElement('button');
+          btn.textContent = 'Approve ' + id;
+          btn.style.background = '#111';
+          btn.style.marginRight = '0.5rem';
+          btn.onclick = function () { approveDevice(id); };
+          var code = document.createElement('code');
+          code.textContent = id;
+          row.appendChild(btn);
+          row.appendChild(code);
+          devicesListEl.appendChild(row);
+        })(ids[i]);
+      }
+    }).catch(function (e) {
+      devicesListEl.textContent = 'Error: ' + String(e);
+    });
+  }
+
+  if (devicesRefreshBtn) {
+    devicesRefreshBtn.onclick = refreshDevices;
+  }
+
   document.getElementById('reset').onclick = function () {
     if (!confirm('Reset setup? This deletes the config file so onboarding can run again.')) return;
     logEl.textContent = 'Resetting...\n';

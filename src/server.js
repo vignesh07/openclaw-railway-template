@@ -465,6 +465,13 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
     <button id="reset" style="background:#444; margin-left:0.5rem">Reset setup</button>
     <pre id="log" style="white-space:pre-wrap"></pre>
     <p class="muted">Reset deletes the OpenClaw config file so you can rerun onboarding. Pairing approval lets you grant DM access when dmPolicy=pairing.</p>
+
+    <details style="margin-top: 0.75rem">
+      <summary><strong>Pairing helper</strong> (for “disconnected (1008): pairing required”)</summary>
+      <p class="muted">This lists pending device requests and lets you approve them without SSH.</p>
+      <button id="devicesRefresh" style="background:#0f172a">Refresh pending devices</button>
+      <div id="devicesList" class="muted" style="margin-top:0.5rem"></div>
+    </details>
   </div>
 
   <script src="/setup/app.js"></script>
@@ -824,6 +831,16 @@ function redactSecrets(text) {
     .replace(/(AA[A-Za-z0-9_-]{10,}:\S{10,})/g, "[REDACTED]");
 }
 
+function extractDeviceRequestIds(text) {
+  const s = String(text || "");
+  const out = new Set();
+
+  for (const m of s.matchAll(/requestId\s*(?:=|:)\s*([A-Za-z0-9_-]{6,})/g)) out.add(m[1]);
+  for (const m of s.matchAll(/"requestId"\s*:\s*"([A-Za-z0-9_-]{6,})"/g)) out.add(m[1]);
+
+  return Array.from(out);
+}
+
 const ALLOWED_CONSOLE_COMMANDS = new Set([
   // Wrapper-managed lifecycle
   "gateway.restart",
@@ -969,12 +986,31 @@ app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
   return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: r.output });
 });
 
+// Device pairing helper (list + approve) to avoid needing SSH.
+app.get("/setup/api/devices/pending", requireSetupAuth, async (_req, res) => {
+  const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "list"]));
+  const output = redactSecrets(r.output);
+  const requestIds = extractDeviceRequestIds(output);
+  return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, requestIds, output });
+});
+
+app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
+  const requestId = String((req.body && req.body.requestId) || "").trim();
+  if (!requestId) return res.status(400).json({ ok: false, error: "Missing device request ID" });
+  if (!/^[A-Za-z0-9_-]+$/.test(requestId)) return res.status(400).json({ ok: false, error: "Invalid device request ID" });
+  const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "approve", requestId]));
+  return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Minimal reset: delete the config file so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
   try {
-    fs.rmSync(configPath(), { force: true });
-    res.type("text/plain").send("OK - deleted config file. You can rerun setup now.");
+    const candidates = typeof resolveConfigCandidates === "function" ? resolveConfigCandidates() : [configPath()];
+    for (const p of candidates) {
+      try { fs.rmSync(p, { force: true }); } catch {}
+    }
+    res.type("text/plain").send("OK - deleted config file(s). You can rerun setup now.");
   } catch (err) {
     res.status(500).type("text/plain").send(String(err));
   }
