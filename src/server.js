@@ -644,8 +644,19 @@ function runCmd(cmd, args, opts = {}) {
     });
 
     let out = "";
-    proc.stdout?.on("data", (d) => (out += d.toString("utf8")));
-    proc.stderr?.on("data", (d) => (out += d.toString("utf8")));
+    const MAX_OUTPUT = 10_000; // Limit output to 10KB to prevent heap issues
+    proc.stdout?.on("data", (d) => {
+      const chunk = d.toString("utf8");
+      if (out.length < MAX_OUTPUT) {
+        out += chunk.slice(0, Math.max(0, MAX_OUTPUT - out.length));
+      }
+    });
+    proc.stderr?.on("data", (d) => {
+      const chunk = d.toString("utf8");
+      if (out.length < MAX_OUTPUT) {
+        out += chunk.slice(0, Math.max(0, MAX_OUTPUT - out.length));
+      }
+    });
 
     proc.on("error", (err) => {
       out += `\n[spawn error] ${String(err)}\n`;
