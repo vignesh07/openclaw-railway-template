@@ -442,10 +442,14 @@ app.get("/setup", requireSetupAuth, (_req, res) => {
     <h2>1) Model/auth provider</h2>
     <p class="muted">Matches the groups shown in the terminal onboarding.</p>
     <label>Provider group</label>
-    <select id="authGroup"></select>
+    <select id="authGroup">
+      <option>Loading providers…</option>
+    </select>
 
     <label>Auth method</label>
-    <select id="authChoice"></select>
+    <select id="authChoice">
+      <option>Loading methods…</option>
+    </select>
 
     <label>Key / Token (if required)</label>
     <input id="authSecret" type="password" placeholder="Paste API key / token if applicable" />
