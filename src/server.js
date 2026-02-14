@@ -839,6 +839,13 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
   const v = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
   const help = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
 
+  // Channel config checks (redact secrets before returning to client)
+  const tg = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", "channels.telegram"]));
+  const dc = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", "channels.discord"]));
+
+  const tgOut = redactSecrets(tg.output || "");
+  const dcOut = redactSecrets(dc.output || "");
+
   res.json({
     wrapper: {
       node: process.version,
@@ -852,6 +859,7 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
       internalGatewayHost: INTERNAL_GATEWAY_HOST,
       internalGatewayPort: INTERNAL_GATEWAY_PORT,
       gatewayTarget: GATEWAY_TARGET,
+      gatewayRunning: Boolean(gatewayProc),
       gatewayTokenFromEnv: Boolean(process.env.OPENCLAW_GATEWAY_TOKEN?.trim()),
       gatewayTokenPersisted: fs.existsSync(path.join(STATE_DIR, "gateway.token")),
       lastGatewayError,
@@ -865,6 +873,20 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
       node: OPENCLAW_NODE,
       version: v.output.trim(),
       channelsAddHelpIncludesTelegram: help.output.includes("telegram"),
+      channels: {
+        telegram: {
+          exit: tg.code,
+          configuredEnabled: /enabled\s*[:=]\s*true/.test(tg.output || ""),
+          botTokenPresent: /(\d{5,}:[A-Za-z0-9_-]{10,})/.test(tg.output || ""),
+          output: tgOut,
+        },
+        discord: {
+          exit: dc.code,
+          configuredEnabled: /enabled\s*[:=]\s*true/.test(dc.output || ""),
+          tokenPresent: /token\s*[:=]\s*\S+/.test(dc.output || ""),
+          output: dcOut,
+        },
+      },
     },
   });
 });
@@ -878,6 +900,8 @@ function redactSecrets(text) {
     .replace(/(sk-[A-Za-z0-9_-]{10,})/g, "[REDACTED]")
     .replace(/(gho_[A-Za-z0-9_]{10,})/g, "[REDACTED]")
     .replace(/(xox[baprs]-[A-Za-z0-9-]{10,})/g, "[REDACTED]")
+    // Telegram bot tokens look like: 123456:ABCDEF...
+    .replace(/(\d{5,}:[A-Za-z0-9_-]{10,})/g, "[REDACTED]")
     .replace(/(AA[A-Za-z0-9_-]{10,}:\S{10,})/g, "[REDACTED]");
 }
 
