@@ -6,5 +6,10 @@ healthcheckPath = "/setup/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 
+# Require a persistent volume mounted at /data (Railway).
+requiredMountPath = "/data"
+
 [variables]
 PORT = "8080"
+OPENCLAW_STATE_DIR = "/data/.openclaw"
+OPENCLAW_WORKSPACE_DIR = "/data/workspace"
