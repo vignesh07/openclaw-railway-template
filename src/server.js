@@ -58,11 +58,15 @@ const WORKSPACE_DIR =
 const GH_CONFIG_DIR = process.env.GH_CONFIG_DIR || path.join(STATE_DIR, "auth", "gh");
 const XDG_CONFIG_HOME =
   process.env.XDG_CONFIG_HOME || path.join(STATE_DIR, "auth", "xdg");
+const RAILWAY_CONFIG_DIR =
+  process.env.RAILWAY_CONFIG_DIR || path.join(XDG_CONFIG_HOME, "railway");
 process.env.GH_CONFIG_DIR = GH_CONFIG_DIR;
 process.env.XDG_CONFIG_HOME = XDG_CONFIG_HOME;
+process.env.RAILWAY_CONFIG_DIR = RAILWAY_CONFIG_DIR;
 try {
   fs.mkdirSync(GH_CONFIG_DIR, { recursive: true });
   fs.mkdirSync(XDG_CONFIG_HOME, { recursive: true });
+  fs.mkdirSync(RAILWAY_CONFIG_DIR, { recursive: true });
 } catch {
   // best-effort
 }
