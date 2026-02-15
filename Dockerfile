@@ -42,11 +42,18 @@ RUN pnpm ui:install && pnpm ui:build
 # Runtime image
 FROM node:22-bookworm
 ENV NODE_ENV=production
+ENV CHROME_BIN=/usr/bin/chromium
 
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    git \
+    gh \
+    chromium \
   && rm -rf /var/lib/apt/lists/*
+
+# Runtime CLI dependencies used by OpenClaw sessions.
+RUN npm install -g clawhub && npm cache clean --force
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
