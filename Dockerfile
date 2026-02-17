@@ -70,6 +70,5 @@ COPY src ./src
 # IMPORTANT: Do not hardcode a public listen port here.
 # Railway injects PORT at runtime and routes traffic to that port.
 # If we force a different port, deployments can come up but the domain will route elsewhere.
-ENV PORT=8080
 EXPOSE 8080
 CMD ["node", "src/server.js"]
