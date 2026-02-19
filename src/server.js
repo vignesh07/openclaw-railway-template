@@ -1369,6 +1369,27 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
   }
 
+  // Optional operator hook to install/persist extra tools under /data.
+  // This is intentionally best-effort and should be used to set up persistent
+  // prefixes (npm/pnpm/python venv), not to mutate the base image.
+  const bootstrapPath = path.join(WORKSPACE_DIR, "bootstrap.sh");
+  if (fs.existsSync(bootstrapPath)) {
+    console.log(`[wrapper] running bootstrap: ${bootstrapPath}`);
+    try {
+      await runCmd("bash", [bootstrapPath], {
+        env: {
+          ...process.env,
+          OPENCLAW_STATE_DIR: STATE_DIR,
+          OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+        },
+        timeoutMs: 10 * 60 * 1000,
+      });
+      console.log("[wrapper] bootstrap complete");
+    } catch (err) {
+      console.warn(`[wrapper] bootstrap failed (continuing): ${String(err)}`);
+    }
+  }
+
   // Auto-start the gateway if already configured so polling channels (Telegram/Discord/etc.)
   // work even if nobody visits the web UI.
   if (isConfigured()) {
