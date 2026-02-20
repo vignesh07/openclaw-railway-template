@@ -1150,7 +1150,7 @@ app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
 
 app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
   try {
-    const accountId = String((req.body && req.body.accountId) || "").trim();
+    const accountId = String(req.body?.accountId || "").trim();
 
     if (!accountId) {
       return res.status(400).json({ ok: false, error: "accountId required" });
@@ -1159,19 +1159,34 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    // Create/ensure the WhatsApp account entry exists in config.
     const cfgPath = `channels.whatsapp.accounts.${accountId}`;
-    const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", cfgPath, "{}"]));
 
-    if (r.code !== 0) {
-      return res.status(500).json({ ok: false, error: "config set failed", output: redactSecrets(r.output) });
+    // 1) If it already exists, DO NOT write config again (avoids meta.lastTouchedAt + restarts)
+    const get = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", cfgPath]));
+    if (get.code === 0) {
+      return res.status(200).json({ ok: true, accountId, existed: true });
     }
 
-    return res.status(200).json({ ok: true, accountId });
+    // 2) Create it
+    const set = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs(["config", "set", "--json", cfgPath, "{}"]),
+    );
+
+    if (set.code !== 0) {
+      return res.status(500).json({
+        ok: false,
+        error: "config set failed",
+        output: redactSecrets(set.output),
+      });
+    }
+
+    return res.status(200).json({ ok: true, accountId, existed: false });
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });
   }
 });
+
 
 app.post("/setup/api/whatsapp/qr", requireSetupAuth, async (req, res) => {
   try {
