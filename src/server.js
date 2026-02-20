@@ -1173,6 +1173,89 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
   }
 });
 
+app.post("/setup/api/whatsapp/qr", requireSetupAuth, async (req, res) => {
+  try {
+    const accountId = String((req.body && req.body.accountId) || "").trim();
+
+    if (!accountId) {
+      return res.status(400).json({ ok: false, error: "accountId required" });
+    }
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+      return res.status(400).json({ ok: false, error: "invalid accountId" });
+    }
+
+    const args = ["channels", "login", "--channel", "whatsapp", "--account", accountId];
+    const timeoutMs = 30_000;
+
+    const proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        OPENCLAW_STATE_DIR: STATE_DIR,
+        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+      },
+    });
+
+    let buf = "";
+    let done = false;
+    let timer;
+
+    const finish = (status, body) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { proc.kill("SIGTERM"); } catch {}
+      return res.status(status).json(body);
+    };
+
+    function tryExtractQr(text) {
+      // Heuristic: contiguous lines that start with block chars form the ASCII QR.
+      const lines = text.split(/\r?\n/);
+      const start = lines.findIndex((l) => l.startsWith("█") || l.startsWith("▄"));
+      if (start < 0) return null;
+
+      let end = start;
+      while (end < lines.length && (lines[end].startsWith("█") || lines[end].startsWith("▄"))) end++;
+
+      const qrLines = lines.slice(start, end).filter(Boolean);
+      if (qrLines.length < 10) return null;
+
+      return qrLines.join("\n");
+    }
+
+    timer = setTimeout(() => {
+      finish(504, { ok: false, error: "timeout waiting for QR" });
+    }, timeoutMs);
+
+    const onData = (chunk) => {
+      buf += chunk.toString("utf8");
+
+      const qr = tryExtractQr(buf);
+      if (qr) {
+        return finish(200, { ok: true, accountId, qr });
+      }
+    };
+
+    proc.stdout.on("data", onData);
+    proc.stderr.on("data", onData);
+
+    proc.on("error", (err) => {
+      finish(500, { ok: false, error: String(err) });
+    });
+
+    proc.on("close", (code) => {
+      if (done) return;
+      finish(500, {
+        ok: false,
+        error: `login exited before QR (code=${code})`,
+        output: buf.slice(-4000),
+      });
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
