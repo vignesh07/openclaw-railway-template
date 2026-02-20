@@ -56,13 +56,16 @@ RUN apt-get update \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 # Install Homebrew (Linuxbrew) so skills can use `brew install` at runtime.
-# Add /home/linuxbrew/.linuxbrew/bin to PATH so brew and all brew-installed
-# binaries (gog, nano-pdf, etc.) are automatically discoverable.
-RUN useradd -m -s /bin/bash linuxbrew \
-  && NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+# Homebrew refuses to run as root, so we switch to the linuxbrew user for installation,
+# then switch back to root for the remaining Dockerfile steps.
+RUN useradd -m -s /bin/bash linuxbrew
+USER linuxbrew
+RUN NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
   && /home/linuxbrew/.linuxbrew/bin/brew install steipete/tap/gogcli \
   && /home/linuxbrew/.linuxbrew/bin/brew cleanup --prune=all \
   && rm -rf /home/linuxbrew/.linuxbrew/Library/Taps/homebrew/homebrew-core/.git
+USER root
+# Add brew bin to PATH so gog, nano-pdf, etc. are automatically discoverable.
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
