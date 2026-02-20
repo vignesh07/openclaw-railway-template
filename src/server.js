@@ -1152,36 +1152,37 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
   try {
     const accountId = String(req.body?.accountId || "").trim();
 
-    if (!accountId) {
-      return res.status(400).json({ ok: false, error: "accountId required" });
-    }
+    if (!accountId) return res.status(400).json({ ok: false, error: "accountId required" });
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
     const cfgPath = `channels.whatsapp.accounts.${accountId}`;
 
-    // 1) If it already exists, DO NOT write config again (avoids meta.lastTouchedAt + restarts)
+    // If exists, do nothing (idempotent)
     const get = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", cfgPath]));
     if (get.code === 0) {
-      return res.status(200).json({ ok: true, accountId, existed: true });
+      return res.status(200).json({ ok: true, accountId, existed: true, changed: false });
     }
 
-    // 2) Create it
+    const desired = {
+      enabled: true,
+      dmPolicy: "allowlist",
+      allowFrom: ["*"],
+      groupPolicy: "disabled",
+      debounceMs: 0,
+    };
+
     const set = await runCmd(
       OPENCLAW_NODE,
-      clawArgs(["config", "set", "--json", cfgPath, "{}"]),
+      clawArgs(["config", "set", "--json", cfgPath, JSON.stringify(desired)]),
     );
 
     if (set.code !== 0) {
-      return res.status(500).json({
-        ok: false,
-        error: "config set failed",
-        output: redactSecrets(set.output),
-      });
+      return res.status(500).json({ ok: false, error: "config set failed", output: redactSecrets(set.output) });
     }
 
-    return res.status(200).json({ ok: true, accountId, existed: false });
+    return res.status(200).json({ ok: true, accountId, existed: false, changed: true });
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });
   }
