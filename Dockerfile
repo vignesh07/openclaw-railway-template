@@ -55,6 +55,14 @@ RUN apt-get update \
 # Install uv (Python package manager required by skills like nano-banana-pro)
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# Install Homebrew (Linuxbrew) for skills that require brew-installable CLIs (e.g. gog)
+RUN useradd -m -s /bin/bash linuxbrew \
+  && NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+  && /home/linuxbrew/.linuxbrew/bin/brew install steipete/tap/gogcli \
+  && ln -sf /home/linuxbrew/.linuxbrew/bin/gog /usr/local/bin/gog \
+  && /home/linuxbrew/.linuxbrew/bin/brew cleanup --prune=all \
+  && rm -rf /home/linuxbrew/.linuxbrew/Library/Taps/homebrew/homebrew-core/.git
+
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 
