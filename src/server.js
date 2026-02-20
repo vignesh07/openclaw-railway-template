@@ -1148,6 +1148,31 @@ app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
   return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
 });
 
+app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
+  try {
+    const accountId = String((req.body && req.body.accountId) || "").trim();
+
+    if (!accountId) {
+      return res.status(400).json({ ok: false, error: "accountId required" });
+    }
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+      return res.status(400).json({ ok: false, error: "invalid accountId" });
+    }
+
+    // Create/ensure the WhatsApp account entry exists in config.
+    const cfgPath = `channels.whatsapp.accounts.${accountId}`;
+    const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", cfgPath, "{}"]));
+
+    if (r.code !== 0) {
+      return res.status(500).json({ ok: false, error: "config set failed", output: redactSecrets(r.output) });
+    }
+
+    return res.status(200).json({ ok: true, accountId });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
