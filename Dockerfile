@@ -1,17 +1,16 @@
-# Build gog (gogcli) with Go 1.25+
-FROM golang:1.25.6-bookworm AS gog-build
-RUN apt-get update && apt-get install -y --no-install-recommends git make ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN git clone --depth 1 https://github.com/steipete/gogcli.git /tmp/gogcli \
- && cd /tmp/gogcli \
- && make \
- && install -m 0755 ./bin/gog /usr/local/bin/gog
+# Download pre-built gog binary (more reliable than building from source)
+FROM alpine:latest AS gog-build
+RUN apk add --no-cache curl tar
+# Download latest gogcli release for Linux AMD64
+RUN curl -L -o /tmp/gogcli.tar.gz https://github.com/steipete/gogcli/releases/download/v0.11.0/gogcli_0.11.0_linux_amd64.tar.gz \
+ && tar -xzf /tmp/gogcli.tar.gz -C /tmp \
+ && mv /tmp/gog /usr/local/bin/gog \
+ && chmod +x /usr/local/bin/gog
 
 # Build clawdbot from source
 FROM node:22-bookworm AS openclaw-build
 
-# Dependencies needed for clawdbot build (drop golang here)
+# Dependencies needed for clawdbot build
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
@@ -22,7 +21,7 @@ RUN apt-get update \
     g++ \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy gog from the Go build stage
+# Copy gog from the download stage
 COPY --from=gog-build /usr/local/bin/gog /usr/local/bin/gog
 
 # Install Bun (clawdbot build uses it)
