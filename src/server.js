@@ -297,7 +297,11 @@ function requireSetupAuth(req, res, next) {
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+// IMPORTANT:
+// Do not install a global JSON parser.
+// /hooks/* is reverse-proxied to the gateway and must keep the raw request stream.
+// Only setup API endpoints need parsed JSON bodies.
+app.use("/setup/api", express.json({ limit: "1mb" }));
 
 // Minimal health endpoint for Railway.
 app.get("/setup/healthz", (_req, res) => res.json({ ok: true }));
