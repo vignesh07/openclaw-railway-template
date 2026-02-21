@@ -1247,21 +1247,98 @@ function asciiQrToPngBuffer(qrAscii, opts = {}) {
   return PNG.sync.write(png);
 }
 
+function extractWhatsappQrAscii(text) {
+  // Heuristic: contiguous lines that start with block chars form the ASCII QR.
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.startsWith("█") || l.startsWith("▄"));
+  if (start < 0) return null;
+
+  let end = start;
+  while (end < lines.length && (lines[end].startsWith("█") || lines[end].startsWith("▄"))) end++;
+
+  const qrLines = lines.slice(start, end).filter(Boolean);
+  if (qrLines.length < 10) return null;
+
+  return qrLines.join("\n");
+}
+
+function buildWhatsappQrError(status, message, extra = {}) {
+  const err = new Error(message);
+  err.status = status;
+  Object.assign(err, extra);
+  return err;
+}
+
+async function generateWhatsappQrAscii({ accountId, timeoutMs = 30_000 }) {
+  const args = ["channels", "login", "--channel", "whatsapp", "--account", accountId];
+
+  return new Promise((resolve, reject) => {
+    const proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        OPENCLAW_STATE_DIR: STATE_DIR,
+        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+      },
+    });
+
+    let buf = "";
+    let done = false;
+    let timer;
+
+    const finish = (finalize) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { proc.kill("SIGTERM"); } catch {}
+      finalize();
+    };
+
+    timer = setTimeout(() => {
+      finish(() => reject(buildWhatsappQrError(504, "timeout waiting for QR")));
+    }, timeoutMs);
+
+    const onData = (chunk) => {
+      buf += chunk.toString("utf8");
+
+      const qr = extractWhatsappQrAscii(buf);
+      if (qr) {
+        finish(() => resolve(qr));
+      }
+    };
+
+    proc.stdout.on("data", onData);
+    proc.stderr.on("data", onData);
+
+    proc.on("error", (err) => {
+      finish(() => reject(buildWhatsappQrError(500, String(err))));
+    });
+
+    proc.on("close", (code) => {
+      if (done) return;
+      finish(() => reject(
+        buildWhatsappQrError(500, `login exited before QR (code=${code})`, {
+          output: buf.slice(-4000),
+        }),
+      ));
+    });
+  });
+}
+
 app.get("/setup/api/whatsapp/qr.png", requireSetupAuth, async (req, res) => {
   const accountId = String(req.query.accountId || "").trim();
   if (!accountId) return res.status(400).type("text/plain").send("accountId required\n");
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) return res.status(400).type("text/plain").send("invalid accountId\n");
+  try {
+    const qrAscii = await generateWhatsappQrAscii({ accountId });
+    const pngBuf = asciiQrToPngBuffer(qrAscii, { scale: 4, margin: 4 });
 
-  // 1) generate qrAscii (same logic as /setup/api/whatsapp/qr)
-  const qrAscii = await generateWhatsappQrAscii({ accountId });
-  if (!qrAscii) return res.status(500).type("text/plain").send("failed to get qr\n");
-
-  // 2) convert to png
-  const pngBuf = asciiQrToPngBuffer(qrAscii, { scale: 4, margin: 4 });
-
-  res.setHeader("Content-Type", "image/png");
-  res.setHeader("Cache-Control", "no-store");
-  return res.status(200).send(pngBuf);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(pngBuf);
+  } catch (err) {
+    return res.status(err.status || 500).type("text/plain").send(`${err.message || String(err)}\n`);
+  }
 });
 
 
@@ -1276,75 +1353,14 @@ app.post("/setup/api/whatsapp/qr", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    const args = ["channels", "login", "--channel", "whatsapp", "--account", accountId];
-    const timeoutMs = 30_000;
-
-    const proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        OPENCLAW_STATE_DIR: STATE_DIR,
-        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
-      },
-    });
-
-    let buf = "";
-    let done = false;
-    let timer;
-
-    const finish = (status, body) => {
-      if (done) return;
-      done = true;
-      if (timer) clearTimeout(timer);
-      try { proc.kill("SIGTERM"); } catch {}
-      return res.status(status).json(body);
-    };
-
-    function tryExtractQr(text) {
-      // Heuristic: contiguous lines that start with block chars form the ASCII QR.
-      const lines = text.split(/\r?\n/);
-      const start = lines.findIndex((l) => l.startsWith("█") || l.startsWith("▄"));
-      if (start < 0) return null;
-
-      let end = start;
-      while (end < lines.length && (lines[end].startsWith("█") || lines[end].startsWith("▄"))) end++;
-
-      const qrLines = lines.slice(start, end).filter(Boolean);
-      if (qrLines.length < 10) return null;
-
-      return qrLines.join("\n");
-    }
-
-    timer = setTimeout(() => {
-      finish(504, { ok: false, error: "timeout waiting for QR" });
-    }, timeoutMs);
-
-    const onData = (chunk) => {
-      buf += chunk.toString("utf8");
-
-      const qr = tryExtractQr(buf);
-      if (qr) {
-        return finish(200, { ok: true, accountId, qr });
-      }
-    };
-
-    proc.stdout.on("data", onData);
-    proc.stderr.on("data", onData);
-
-    proc.on("error", (err) => {
-      finish(500, { ok: false, error: String(err) });
-    });
-
-    proc.on("close", (code) => {
-      if (done) return;
-      finish(500, {
-        ok: false,
-        error: `login exited before QR (code=${code})`,
-        output: buf.slice(-4000),
-      });
-    });
+    const qr = await generateWhatsappQrAscii({ accountId });
+    return res.status(200).json({ ok: true, accountId, qr });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
+    return res.status(err.status || 500).json({
+      ok: false,
+      error: err.message || String(err),
+      ...(err.output ? { output: err.output } : {}),
+    });
   }
 });
 
