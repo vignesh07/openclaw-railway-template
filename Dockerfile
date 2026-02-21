@@ -65,7 +65,7 @@ RUN NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Hom
   && /home/linuxbrew/.linuxbrew/bin/brew cleanup --prune=all \
   && rm -rf /home/linuxbrew/.linuxbrew/Library/Taps/homebrew/homebrew-core/.git
 USER root
-# Add brew bin to PATH so gog, nano-pdf, etc. are automatically discoverable.
+# Add brew bin to PATH so gog and other Homebrew-installed tools are automatically discoverable.
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
