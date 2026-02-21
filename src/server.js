@@ -1758,17 +1758,19 @@ app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
     const line =
       out.split("\n").find((l) => l.includes(`WhatsApp ${accountId}:`)) || "";
 
-    // IMPORTANT: "linked" matches "not linked", so check "not linked" first.
-    const notLinked = /\bnot linked\b/i.test(line);
-    const linked = !notLinked && /\blinked\b/i.test(line);
+    const lineNorm = line.toLowerCase();
 
-    const running = /\brunning\b/i.test(line);
-    const disconnected = /\bdisconnected\b/i.test(line);
+    const linked = lineNorm.includes(", linked,");
+    const notLinked = lineNorm.includes(", not linked,");
+
+    const running = lineNorm.includes(", running,");
+    const disconnected = lineNorm.includes(", disconnected,");
 
     return res.status(200).json({
       ok: true,
       accountId,
       linked,
+      notLinked,
       running,
       disconnected,
       line,
