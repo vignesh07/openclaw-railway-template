@@ -1688,6 +1688,95 @@ app.post("/setup/api/whatsapp/qr", requireSetupAuth, async (req, res) => {
   }
 });
 
+app.post(
+  "/setup/api/whatsapp/accounts/debounce",
+  requireSetupAuth,
+  async (req, res) => {
+    try {
+      const accountId = String(req.body?.accountId || "").trim();
+      const debounceMsRaw = req.body?.debounceMs;
+
+      if (!accountId)
+        return res.status(400).json({ ok: false, error: "accountId required" });
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+        return res.status(400).json({ ok: false, error: "invalid accountId" });
+      }
+
+      const debounceMs = Number(debounceMsRaw);
+      if (
+        !Number.isFinite(debounceMs) ||
+        debounceMs < 0 ||
+        debounceMs > 60_000
+      ) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "invalid debounceMs (0..60000)" });
+      }
+
+      const path = `channels.whatsapp.accounts.${accountId}.debounceMs`;
+
+      const r = await runCmd(
+        OPENCLAW_NODE,
+        clawArgs(["config", "set", path, String(debounceMs)]),
+      );
+
+      if (r.code !== 0) {
+        return res.status(500).json({
+          ok: false,
+          error: "config set failed",
+          output: redactSecrets(r.output),
+        });
+      }
+
+      return res.status(200).json({ ok: true, accountId, debounceMs });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  },
+);
+
+app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
+  try {
+    const accountId = String(req.query.accountId || "").trim();
+
+    if (!accountId)
+      return res.status(400).json({ ok: false, error: "accountId required" });
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+      return res.status(400).json({ ok: false, error: "invalid accountId" });
+    }
+
+    const r = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "status"]));
+    if (r.code !== 0) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error: "channels status failed",
+          output: redactSecrets(r.output),
+        });
+    }
+
+    const out = r.output || "";
+    const line =
+      out.split("\n").find((l) => l.includes(`WhatsApp ${accountId}:`)) || "";
+
+    const linked = /linked/i.test(line);
+    const running = /running/i.test(line);
+    const disconnected = /disconnected/i.test(line);
+
+    return res.status(200).json({
+      ok: true,
+      accountId,
+      linked,
+      running,
+      disconnected,
+      line,
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
