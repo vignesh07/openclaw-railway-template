@@ -1747,22 +1747,23 @@ app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
 
     const r = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "status"]));
     if (r.code !== 0) {
-      return res
-        .status(500)
-        .json({
-          ok: false,
-          error: "channels status failed",
-          output: redactSecrets(r.output),
-        });
+      return res.status(500).json({
+        ok: false,
+        error: "channels status failed",
+        output: redactSecrets(r.output),
+      });
     }
 
     const out = r.output || "";
     const line =
       out.split("\n").find((l) => l.includes(`WhatsApp ${accountId}:`)) || "";
 
-    const linked = /linked/i.test(line);
-    const running = /running/i.test(line);
-    const disconnected = /disconnected/i.test(line);
+    // IMPORTANT: "linked" matches "not linked", so check "not linked" first.
+    const notLinked = /\bnot linked\b/i.test(line);
+    const linked = !notLinked && /\blinked\b/i.test(line);
+
+    const running = /\brunning\b/i.test(line);
+    const disconnected = /\bdisconnected\b/i.test(line);
 
     return res.status(200).json({
       ok: true,
