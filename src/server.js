@@ -1453,7 +1453,7 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
         .json({ ok: true, accountId, existed: true, changed: false });
     }
 
-    const desired = {
+    const configOptions = {
       enabled: true,
       dmPolicy: "allowlist",
       allowFrom: ["*"],
@@ -1461,18 +1461,71 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       debounceMs: 0,
     };
 
-    const set = await runCmd(
+    const configSet = await runCmd(
       OPENCLAW_NODE,
-      clawArgs(["config", "set", "--json", cfgPath, JSON.stringify(desired)]),
+      clawArgs([
+        "config",
+        "set",
+        "--json",
+        cfgPath,
+        JSON.stringify(configOptions),
+      ]),
     );
 
-    if (set.code !== 0) {
+    if (configSet.code !== 0) {
       return res.status(500).json({
         ok: false,
         error: "config set failed",
-        output: redactSecrets(set.output),
+        output: redactSecrets(configSet.output),
       });
     }
+
+    const workspace = `/data/state/agents/${accountId}/workspace`;
+    const agentDir = `/data/state/agents/${accountId}/agent`;
+
+    const agentOptions = {
+      enabled: true,
+      dmPolicy: "allowlist",
+      allowFrom: ["*"],
+      groupPolicy: "disabled",
+      debounceMs: 0,
+    };
+
+    const agentSet = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs([
+        "agents",
+        "add",
+        accountId,
+        "--workspace",
+        workspace,
+        "--agent-dir",
+        agentDir,
+        "--non-interactive",
+        "--bind",
+        `whatsapp:${accountId}`,
+        cfgPath,
+        JSON.stringify(agentOptions),
+      ]),
+    );
+
+    if (agentSet.code !== 0) {
+      return res.status(500).json({
+        ok: false,
+        error: "agent add failed",
+        output: redactSecrets(configSet.output),
+      });
+    }
+
+    const templateSrc =
+      "/data/state/agents/schedly-template/workspace/AGENTS.md";
+    const nextAgents = `/data/state/agents/${accountId}/workspace/AGENTS.md`;
+
+    const templateContent = fs.readFile(templateSrc, "utf8");
+
+    const templateTmp = `${nextAgents}.tmp`;
+    fs.writeFile(templateTmp, templateContent, "utf8");
+    fs.rename(templateTmp, nextAgents);
 
     return res
       .status(200)
@@ -1934,7 +1987,7 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
 
     // Extract into /data.
     // We only allow safe relative paths, and we intentionally do NOT delete existing files.
-    // (Users can reset/redeploy or manually clean the volume if desired.)
+    // (Users can reset/redeploy or manually clean the volume if configOptions.)
     const tmpPath = path.join(
       os.tmpdir(),
       `openclaw-import-${Date.now()}.tar.gz`,
