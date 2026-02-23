@@ -1483,14 +1483,6 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
     const workspace = `/data/state/agents/${accountId}/workspace`;
     const agentDir = `/data/state/agents/${accountId}/agent`;
 
-    const agentOptions = {
-      enabled: true,
-      dmPolicy: "allowlist",
-      allowFrom: ["*"],
-      groupPolicy: "disabled",
-      debounceMs: 0,
-    };
-
     const agentSet = await runCmd(
       OPENCLAW_NODE,
       clawArgs([
@@ -1504,8 +1496,6 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
         "--non-interactive",
         "--bind",
         `whatsapp:${accountId}`,
-        cfgPath,
-        JSON.stringify(agentOptions),
       ]),
     );
 
