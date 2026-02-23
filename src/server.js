@@ -1513,7 +1513,7 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       return res.status(500).json({
         ok: false,
         error: "agent add failed",
-        output: redactSecrets(configSet.output),
+        output: redactSecrets(agentSet.output),
       });
     }
 
@@ -1524,6 +1524,7 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
     const templateContent = fs.readFile(templateSrc, "utf8");
 
     const templateTmp = `${nextAgents}.tmp`;
+
     fs.writeFile(templateTmp, templateContent, "utf8");
     fs.rename(templateTmp, nextAgents);
 
