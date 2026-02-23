@@ -2044,6 +2044,16 @@ proxy.on("error", (err, _req, res) => {
   }
 });
 
+function attachGatewayAuthHeader(req) {
+  // When running behind the Railway wrapper, the gateway is only reachable from this container.
+  // The Control UI running in the browser cannot set custom Authorization headers for WebSocket
+  // connections, so we terminate auth at the wrapper by injecting the token into proxied
+  // requests.
+  if (!req?.headers?.authorization && OPENCLAW_GATEWAY_TOKEN) {
+    req.headers.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+  }
+}
+
 app.use(async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
@@ -2066,6 +2076,7 @@ app.use(async (req, res) => {
     }
   }
 
+  attachGatewayAuthHeader(req);
   return proxy.web(req, res, { target: GATEWAY_TARGET });
 });
 
@@ -2139,6 +2150,7 @@ server.on("upgrade", async (req, socket, head) => {
     socket.destroy();
     return;
   }
+  attachGatewayAuthHeader(req);
   proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
 });
 

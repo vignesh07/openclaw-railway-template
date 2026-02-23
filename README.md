@@ -21,28 +21,33 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web wizard s
 
 In Railway Template Composer:
 
-1) Create a new template from this GitHub repo.
-2) Add a **Volume** mounted at `/data`.
-3) Set the following variables:
+1. Create a new template from this GitHub repo.
+2. Add a **Volume** mounted at `/data`.
+3. Set the following variables:
 
 Required:
+
 - `SETUP_PASSWORD` — user-provided password to access `/setup`
 
 Recommended:
+
 - `OPENCLAW_STATE_DIR=/data/.openclaw`
 - `OPENCLAW_WORKSPACE_DIR=/data/workspace`
 
 Optional:
+
 - `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
 
 Notes:
+
 - This template pins OpenClaw to a released version by default via Docker build arg `OPENCLAW_GIT_REF` (override if you want `main`).
 
-4) Enable **Public Networking** (HTTP). Railway will assign a domain.
+4. Enable **Public Networking** (HTTP). Railway will assign a domain.
    - This service listens on Railway’s injected `PORT` at runtime (recommended).
-5) Deploy.
+5. Deploy.
 
 Then:
+
 - Visit `https://<your-app>.up.railway.app/setup`
 - Complete setup
 - Visit `https://<your-app>.up.railway.app/` and `/openclaw`
@@ -53,36 +58,41 @@ Then:
 - Discord: https://discord.com/invite/clawd
 
 If you’re filing a bug, please include the output of:
+
 - `/healthz`
 - `/setup/api/debug` (after authenticating to /setup)
 
 ## Getting chat tokens (so you don’t have to scramble)
 
 ### Telegram bot token
-1) Open Telegram and message **@BotFather**
-2) Run `/newbot` and follow the prompts
-3) BotFather will give you a token that looks like: `123456789:AA...`
-4) Paste that token into `/setup`
+
+1. Open Telegram and message **@BotFather**
+2. Run `/newbot` and follow the prompts
+3. BotFather will give you a token that looks like: `123456789:AA...`
+4. Paste that token into `/setup`
 
 ### Discord bot token
-1) Go to the Discord Developer Portal: https://discord.com/developers/applications
-2) **New Application** → pick a name
-3) Open the **Bot** tab → **Add Bot**
-4) Copy the **Bot Token** and paste it into `/setup`
-5) Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`; then choose permissions)
+
+1. Go to the Discord Developer Portal: https://discord.com/developers/applications
+2. **New Application** → pick a name
+3. Open the **Bot** tab → **Add Bot**
+4. Copy the **Bot Token** and paste it into `/setup`
+5. Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`; then choose permissions)
 
 ## Persistence (Railway volume)
 
 Railway containers have an ephemeral filesystem. Only the mounted volume at `/data` persists across restarts/redeploys.
 
 What persists cleanly today:
+
 - **Custom skills / code:** anything under `OPENCLAW_WORKSPACE_DIR` (default: `/data/workspace`)
 - **Node global tools (npm/pnpm):** this template configures defaults so global installs land under `/data`:
   - npm globals: `/data/npm` (binaries in `/data/npm/bin`)
   - pnpm globals: `/data/pnpm` (binaries) + `/data/pnpm-store` (store)
 - **Python packages:** create a venv under `/data` (example below). The runtime image includes Python + venv support.
 
-What does *not* persist cleanly:
+What does _not_ persist cleanly:
+
 - `apt-get install ...` (installs into `/usr/*`)
 - Homebrew installs (typically `/opt/homebrew` or similar)
 
@@ -111,13 +121,16 @@ mkdir -p /data/npm /data/npm-cache /data/pnpm /data/pnpm-store
 This is not a crash — it means the gateway is running, but no device has been approved yet.
 
 Fix:
+
 - Open `/setup`
 - Use the **Debug Console**:
   - `openclaw devices list`
   - `openclaw devices approve <requestId>`
 
 If `openclaw devices list` shows no pending request IDs:
+
 - Make sure you’re visiting the Control UI at `/openclaw` (or your native app) and letting it attempt to connect
+- Note: the Railway wrapper now proxies the gateway and injects the auth token automatically, so you should not need to paste the gateway token into the Control UI when using `/openclaw`.
 - Ensure your state dir is the Railway volume (recommended): `OPENCLAW_STATE_DIR=/data/.openclaw`
 - Check `/setup/api/debug` for the active state/workspace dirs + gateway readiness
 
@@ -126,6 +139,7 @@ If `openclaw devices list` shows no pending request IDs:
 The Control UI connects using `gateway.remote.token` and the gateway validates `gateway.auth.token`.
 
 Fix:
+
 - Re-run `/setup` so the wrapper writes both tokens.
 - Or set both values to the same token in config.
 
@@ -134,15 +148,17 @@ Fix:
 Most often this means the wrapper is up, but the gateway can’t start or can’t bind.
 
 Checklist:
+
 - Ensure you mounted a **Volume** at `/data` and set:
   - `OPENCLAW_STATE_DIR=/data/.openclaw`
   - `OPENCLAW_WORKSPACE_DIR=/data/workspace`
 - Ensure **Public Networking** is enabled (Railway will inject `PORT`).
 - Check Railway logs for the wrapper error: it will show `Gateway not ready:` with the reason.
 
-### Legacy CLAWDBOT_* env vars / multiple state directories
+### Legacy CLAWDBOT\_\* env vars / multiple state directories
 
 If you see warnings about deprecated `CLAWDBOT_*` variables or state dir split-brain (e.g. `~/.openclaw` vs `/data/...`):
+
 - Use `OPENCLAW_*` variables only
 - Ensure `OPENCLAW_STATE_DIR=/data/.openclaw` and `OPENCLAW_WORKSPACE_DIR=/data/workspace`
 - Redeploy after fixing Railway Variables
@@ -152,6 +168,7 @@ If you see warnings about deprecated `CLAWDBOT_*` variables or state dir split-b
 Building OpenClaw from source can exceed small memory tiers.
 
 Recommendations:
+
 - Use a plan with **2GB+ memory**.
 - If you see `Reached heap limit Allocation failed - JavaScript heap out of memory`, upgrade memory and redeploy.
 
