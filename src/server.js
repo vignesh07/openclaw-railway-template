@@ -1521,12 +1521,12 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       "/data/state/agents/schedly-template/workspace/AGENTS.md";
     const nextAgents = `/data/state/agents/${accountId}/workspace/AGENTS.md`;
 
-    const templateContent = fs.readFile(templateSrc, "utf8");
+    const templateContent = await fs.promises.readFile(templateSrc, "utf8");
 
     const templateTmp = `${nextAgents}.tmp`;
 
-    fs.writeFile(templateTmp, templateContent, "utf8");
-    fs.rename(templateTmp, nextAgents);
+    await fs.promises.writeFile(templateTmp, templateContent, "utf8");
+    await fs.promises.rename(templateTmp, nextAgents);
 
     return res
       .status(200)
