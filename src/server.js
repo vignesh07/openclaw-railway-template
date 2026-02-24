@@ -249,6 +249,21 @@ app.use(express.json({ limit: "1mb" }));
 // Minimal health endpoint for Railway.
 app.get("/setup/healthz", (_req, res) => res.json({ ok: true }));
 
+const proxy = httpProxy.createProxyServer({ changeOrigin: true });
+
+app.use("/gateway", async (req, res) => {
+  const status = await ensureGatewayRunning();
+  if (!status.ok) {
+    return res.status(503).json({ ok: false, reason: status.reason });
+  }
+
+  proxy.web(req, res, {
+    target: GATEWAY_TARGET,
+    changeOrigin: true,
+    xfwd: true
+  });
+});
+
 app.get("/setup/app.js", requireSetupAuth, (_req, res) => {
   // Serve JS for /setup (kept external to avoid inline encoding/template issues)
   res.type("application/javascript");
