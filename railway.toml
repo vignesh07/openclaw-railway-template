@@ -2,8 +2,7 @@
 builder = "dockerfile"
 
 [deploy]
-healthcheckType = "tcp"
-healthcheckPort = 18789
+healthcheckPath = "/setup/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 
