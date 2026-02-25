@@ -1828,7 +1828,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
   try {
     const accountId = String(req.body?.accountId || "").trim();
     const type = req.body?.type;
-    const data = req.body?.data;
+    const curContent = req.body?.data;
 
     if (!accountId)
       return res.status(400).json({ ok: false, error: "accountId required" });
@@ -1849,11 +1849,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
 
     const schedulePath = `${workspacePath}/SCHEDULE.json`;
 
-    const curPath =
-      data.type === "tenantConfig" ? tenantConfigPath : schedulePath;
-
-    const curContent =
-      data.type === "tenantConfig" ? data.tenantConfig : data.schedule;
+    const curPath = type === "tenantConfig" ? tenantConfigPath : schedulePath;
 
     // backup do arquivo atual (se existir)
     let hadPrevious = false;
