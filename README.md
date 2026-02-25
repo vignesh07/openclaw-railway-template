@@ -112,14 +112,26 @@ mkdir -p /data/npm /data/npm-cache /data/pnpm /data/pnpm-store
 This is not a crash — it means the gateway is running, but no device has been approved yet.
 
 Fix:
-- Open `/setup`
-- Use the **Debug Console**:
-  - `openclaw devices list`
-  - `openclaw devices approve <requestId>`
+1) Generate a pairing request ID by opening the Control UI in your browser:
+   - `https://<your-domain>.up.railway.app/openclaw/?token=<OPENCLAW_GATEWAY_TOKEN>`
+
+2) Open `/setup`
+
+3) Use the **Debug Console**:
+   - `openclaw devices list`
+   - `openclaw devices approve <requestId>`
 
 If `openclaw devices list` shows no pending request IDs:
-- Make sure you’re visiting the Control UI at `/openclaw` (or your native app) and letting it attempt to connect
-  - Note: the Railway wrapper now proxies the gateway and injects the auth token automatically, so you should not need to paste the gateway token into the Control UI when using `/openclaw`.
+- Reload the Control UI URL and verify the placeholders are correct:
+  - `https://<your-domain>.up.railway.app/openclaw/?token=<OPENCLAW_GATEWAY_TOKEN>`
+  - Where:
+    - `<your-domain>` is your Railway public domain (e.g. `my-app` in `my-app.up.railway.app`)
+    - `<OPENCLAW_GATEWAY_TOKEN>` is the gateway token you set in Railway Variables (`OPENCLAW_GATEWAY_TOKEN`)
+      - If you forgot it, you can find it via `/setup/api/debug` or in the persisted config under your state dir (default: `/data/.openclaw`).
+
+- Also try opening the Control UI at `/openclaw` (without `?token=...`) and letting it attempt to connect.
+  - Note: the Railway wrapper proxies the gateway and often injects the auth token automatically, so you may not need the `?token=...` URL in normal cases.
+
 - Ensure your state dir is the Railway volume (recommended): `OPENCLAW_STATE_DIR=/data/.openclaw`
 - Check `/setup/api/debug` for the active state/workspace dirs + gateway readiness
 
