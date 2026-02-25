@@ -118,8 +118,18 @@ Fix:
   - `openclaw devices approve <requestId>`
 
 If `openclaw devices list` shows no pending request IDs:
-- Make sure you’re visiting the Control UI at `/openclaw` (or your native app) and letting it attempt to connect
-  - Note: the Railway wrapper now proxies the gateway and injects the auth token automatically, so you should not need to paste the gateway token into the Control UI when using `/openclaw`.
+- First, force the Control UI to attempt a token-authenticated connection (this will create a pairing request ID):
+  - Open:
+    `https://<your-domain>.up.railway.app/openclaw/?token=<OPENCLAW_GATEWAY_TOKEN>`
+  - Where:
+    - `<your-domain>` is your Railway public domain (e.g. `my-app` in `my-app.up.railway.app`)
+    - `<OPENCLAW_GATEWAY_TOKEN>` is the gateway token you set in Railway Variables (`OPENCLAW_GATEWAY_TOKEN`)
+      - If you forgot it, you can find it via `/setup/api/debug` or in the persisted config under your state dir (default: `/data/.openclaw`).
+  - After the page loads, re-run `openclaw devices list` in the `/setup` Debug Console and you should see a pending `requestId`.
+
+- Alternatively, make sure you’re visiting the Control UI at `/openclaw` (or your native app) and letting it attempt to connect.
+  - Note: the Railway wrapper proxies the gateway and often injects the auth token automatically, so you may not need the `?token=...` URL in normal cases.
+
 - Ensure your state dir is the Railway volume (recommended): `OPENCLAW_STATE_DIR=/data/.openclaw`
 - Check `/setup/api/debug` for the active state/workspace dirs + gateway readiness
 
