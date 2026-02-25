@@ -1840,7 +1840,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "data required" });
 
     if (type !== "schedule" && type !== "tenantConfig")
-      return res.status(400).json({ ok: false, error: "type required" });
+      return res.status(400).json({ ok: false, error: "type invalid" });
 
     const backupPath =
       type === "tenantConfig"
