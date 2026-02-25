@@ -1836,7 +1836,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    if (!data.tenantConfig && !data.schedule)
+    if (!curContent)
       return res
         .status(400)
         .json({ ok: false, error: "tenantConfig or schedule required" });
