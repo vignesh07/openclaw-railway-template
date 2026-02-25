@@ -1828,6 +1828,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
   try {
     const accountId = String(req.body?.accountId || "").trim();
     const type = req.body?.type;
+    const curContent = req.body?.data;
 
     if (!accountId)
       return res.status(400).json({ ok: false, error: "accountId required" });
@@ -1835,15 +1836,12 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    if (curContent === null)
-      return res
-        .status(400)
-        .json({ ok: false, error: "tenantConfig or schedule required" });
+    if (curContent === undefined || curContent === null)
+      return res.status(400).json({ ok: false, error: "data required" });
 
-    if (!type)
+    if (type !== "schedule" && type !== "tenantConfig")
       return res.status(400).json({ ok: false, error: "type required" });
 
-    const curContent = req.body?.data;
     const backupPath =
       type === "tenantConfig"
         ? `/data/state/agents/${accountId}/SUPPORT_MEMORY.json.bak`
@@ -1856,8 +1854,6 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
     const schedulePath = `${workspacePath}/SCHEDULE.json`;
 
     const curPath = type === "tenantConfig" ? tenantConfigPath : schedulePath;
-
-    // backup do arquivo atual (se existir)
 
     try {
       await fs.promises.access(curPath);
