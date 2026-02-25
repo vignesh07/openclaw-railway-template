@@ -1824,6 +1824,55 @@ app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
   }
 });
 
+app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
+  try {
+    const accountId = String(req.body?.accountId || "").trim();
+    const tenantConfig = req.body?.tenantConfig;
+
+    if (!accountId)
+      return res.status(400).json({ ok: false, error: "accountId required" });
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+      return res.status(400).json({ ok: false, error: "invalid accountId" });
+    }
+
+    if (tenantConfig === null || !tenantConfig)
+      return res
+        .status(400)
+        .json({ ok: false, error: "tenantConfig required" });
+
+    const workspace = `/data/state/agents/${accountId}/workspace`;
+
+    const tenantConfigPath = `${workspace}/SUPPORT_MEMORY.json`;
+
+    const backupPath = `${workspace}/SUPPORT_MEMORY.json.bak`;
+
+    // backup do arquivo atual (se existir)
+    let hadPrevious = false;
+    try {
+      await fs.promises.access(tenantConfigPath);
+      hadPrevious = true;
+      await fs.promises.copyFile(tenantConfigPath, backupPath);
+    } catch {
+      // arquivo ainda não existe -> sem backup
+    }
+
+    const fileTmp = `${tenantConfigPath}.tmp`;
+
+    const content =
+      typeof tenantConfig === "string"
+        ? tenantConfig
+        : JSON.stringify(tenantConfig, null, 2);
+
+    await fs.promises.writeFile(fileTmp, content, "utf8");
+
+    await fs.promises.rename(fileTmp, tenantConfigPath);
+
+    return res.status(200).json({ ok: true, accountId });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
   // Keep credentials/sessions/workspace by default.
