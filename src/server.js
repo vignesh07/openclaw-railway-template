@@ -1828,7 +1828,6 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
   try {
     const accountId = String(req.body?.accountId || "").trim();
     const type = req.body?.type;
-    const curContent = req.body?.data;
 
     if (!accountId)
       return res.status(400).json({ ok: false, error: "accountId required" });
@@ -1836,12 +1835,19 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    if (!curContent)
+    if (curContent === null)
       return res
         .status(400)
         .json({ ok: false, error: "tenantConfig or schedule required" });
 
-    const backupPath = `/data/state/agents/${accountId}/SUPPORT_MEMORY.json.bak`;
+    if (!type)
+      return res.status(400).json({ ok: false, error: "type required" });
+
+    const curContent = req.body?.data;
+    const backupPath =
+      type === "tenantConfig"
+        ? `/data/state/agents/${accountId}/SUPPORT_MEMORY.json.bak`
+        : `/data/state/agents/${accountId}/SCHEDULE.json.bak`;
 
     const workspacePath = `/data/state/agents/${accountId}/workspace`;
 
@@ -1852,10 +1858,9 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
     const curPath = type === "tenantConfig" ? tenantConfigPath : schedulePath;
 
     // backup do arquivo atual (se existir)
-    let hadPrevious = false;
+
     try {
       await fs.promises.access(curPath);
-      hadPrevious = true;
       await fs.promises.copyFile(curPath, backupPath);
     } catch {
       // arquivo ainda não existe -> sem backup
@@ -1870,7 +1875,7 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
 
     await fs.promises.writeFile(fileTmp, content, "utf8");
 
-    await fs.promises.rename(fileTmp, tenantConfigPath);
+    await fs.promises.rename(fileTmp, curPath);
 
     return res.status(200).json({ ok: true, accountId });
   } catch (err) {
