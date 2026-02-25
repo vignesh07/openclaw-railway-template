@@ -1827,7 +1827,8 @@ app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
 app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
   try {
     const accountId = String(req.body?.accountId || "").trim();
-    const tenantConfig = req.body?.tenantConfig;
+    const type = req.body?.type;
+    const data = req.body?.data;
 
     if (!accountId)
       return res.status(400).json({ ok: false, error: "accountId required" });
@@ -1835,10 +1836,10 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    if (tenantConfig === null || !tenantConfig)
+    if (!data.tenantConfig && !data.schedule)
       return res
         .status(400)
-        .json({ ok: false, error: "tenantConfig required" });
+        .json({ ok: false, error: "tenantConfig or schedule required" });
 
     const backupPath = `/data/state/agents/${accountId}/SUPPORT_MEMORY.json.bak`;
 
@@ -1846,22 +1847,30 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
 
     const tenantConfigPath = `${workspacePath}/SUPPORT_MEMORY.json`;
 
+    const schedulePath = `${workspacePath}/SCHEDULE.json`;
+
+    const curPath =
+      data.type === "tenantConfig" ? tenantConfigPath : schedulePath;
+
+    const curContent =
+      data.type === "tenantConfig" ? data.tenantConfig : data.schedule;
+
     // backup do arquivo atual (se existir)
     let hadPrevious = false;
     try {
-      await fs.promises.access(tenantConfigPath);
+      await fs.promises.access(curPath);
       hadPrevious = true;
-      await fs.promises.copyFile(tenantConfigPath, backupPath);
+      await fs.promises.copyFile(curPath, backupPath);
     } catch {
       // arquivo ainda não existe -> sem backup
     }
 
-    const fileTmp = `${tenantConfigPath}.tmp`;
+    const fileTmp = `${curPath}.tmp`;
 
     const content =
-      typeof tenantConfig === "string"
-        ? tenantConfig
-        : JSON.stringify(tenantConfig, null, 2);
+      typeof curContent === "string"
+        ? curContent
+        : JSON.stringify(curContent, null, 2);
 
     await fs.promises.writeFile(fileTmp, content, "utf8");
 
