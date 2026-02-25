@@ -1840,11 +1840,11 @@ app.post("/setup/api/tenant/config", requireSetupAuth, async (req, res) => {
         .status(400)
         .json({ ok: false, error: "tenantConfig required" });
 
-    const workspace = `/data/state/agents/${accountId}/workspace`;
+    const backupPath = `/data/state/agents/${accountId}/SUPPORT_MEMORY.json.bak`;
 
-    const tenantConfigPath = `${workspace}/SUPPORT_MEMORY.json`;
+    const workspacePath = `/data/state/agents/${accountId}/workspace`;
 
-    const backupPath = `${workspace}/SUPPORT_MEMORY.json.bak`;
+    const tenantConfigPath = `${workspacePath}/SUPPORT_MEMORY.json`;
 
     // backup do arquivo atual (se existir)
     let hadPrevious = false;
