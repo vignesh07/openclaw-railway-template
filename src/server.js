@@ -1328,17 +1328,39 @@ proxy.on("error", (err, _req, res) => {
   }
 });
 
+// --- Dashboard password protection ---
+// Require the same SETUP_PASSWORD for the entire Control UI dashboard,
+// not just the /setup routes.  Healthcheck is excluded so Railway probes work.
+function requireDashboardAuth(req, res, next) {
+  if (req.path === "/healthz" || req.path === "/setup/healthz") return next();
+  if (!SETUP_PASSWORD) return next(); // no password configured → open
+  const header = req.headers.authorization || "";
+  const [scheme, encoded] = header.split(" ");
+  if (scheme !== "Basic" || !encoded) {
+    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Dashboard"');
+    return res.status(401).send("Auth required");
+  }
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+  const idx = decoded.indexOf(":");
+  const password = idx >= 0 ? decoded.slice(idx + 1) : "";
+  if (password !== SETUP_PASSWORD) {
+    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Dashboard"');
+    return res.status(401).send("Invalid password");
+  }
+  return next();
+}
+
+// --- Gateway token injection ---
+// The gateway is only reachable from this container. The Control UI in the browser
+// cannot set custom Authorization headers for WebSocket connections, so we inject
+// the token into proxied requests at the wrapper level.
 function attachGatewayAuthHeader(req) {
-  // When running behind the Railway wrapper, the gateway is only reachable from this container.
-  // The Control UI running in the browser cannot set custom Authorization headers for WebSocket
-  // connections, so we terminate auth at the wrapper by injecting the token into proxied
-  // requests.
   if (!req?.headers?.authorization && OPENCLAW_GATEWAY_TOKEN) {
     req.headers.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
   }
 }
 
-app.use(async (req, res) => {
+app.use(requireDashboardAuth, async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
     return res.redirect("/setup");
@@ -1404,6 +1426,21 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     }
   }
 
+  // Sync gateway tokens in config with the current env var on every startup.
+  // This prevents "gateway token mismatch" when OPENCLAW_GATEWAY_TOKEN changes
+  // (e.g. Railway variable update) but the config file still has the old value.
+  if (isConfigured() && OPENCLAW_GATEWAY_TOKEN) {
+    console.log("[wrapper] syncing gateway tokens in config...");
+    try {
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+      console.log("[wrapper] gateway tokens synced");
+    } catch (err) {
+      console.warn(`[wrapper] failed to sync gateway tokens: ${String(err)}`);
+    }
+  }
+
   // Auto-start the gateway if already configured so polling channels (Telegram/Discord/etc.)
   // work even if nobody visits the web UI.
   if (isConfigured()) {
@@ -1418,6 +1455,23 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
 });
 
 server.on("upgrade", async (req, socket, head) => {
+  // --- WebSocket password protection ---
+  if (SETUP_PASSWORD) {
+    const header = req.headers.authorization || "";
+    const [scheme, encoded] = header.split(" ");
+    let authed = false;
+    if (scheme === "Basic" && encoded) {
+      const decoded = Buffer.from(encoded, "base64").toString("utf8");
+      const idx = decoded.indexOf(":");
+      const password = idx >= 0 ? decoded.slice(idx + 1) : "";
+      authed = password === SETUP_PASSWORD;
+    }
+    if (!authed) {
+      socket.destroy();
+      return;
+    }
+  }
+
   if (!isConfigured()) {
     socket.destroy();
     return;

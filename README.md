@@ -13,7 +13,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web wizard s
 ## How it works (high level)
 
 - The container runs a wrapper web server.
-- The wrapper protects `/setup` with `SETUP_PASSWORD`.
+- The wrapper protects `/setup` (and the Control UI at `/openclaw`) with `SETUP_PASSWORD` using HTTP Basic auth.
 - During setup, the wrapper runs `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
 - After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
 
@@ -26,7 +26,7 @@ In Railway Template Composer:
 3) Set the following variables:
 
 Required:
-- `SETUP_PASSWORD` — user-provided password to access `/setup`
+- `SETUP_PASSWORD` — user-provided password to access `/setup` and the Control UI (`/openclaw`) via HTTP Basic auth
 
 Recommended:
 - `OPENCLAW_STATE_DIR=/data/.openclaw`
@@ -44,8 +44,9 @@ Notes:
 
 Then:
 - Visit `https://<your-app>.up.railway.app/setup`
+  - Your browser will prompt for **HTTP Basic auth**. Use any username; the password is `SETUP_PASSWORD`.
 - Complete setup
-- Visit `https://<your-app>.up.railway.app/` and `/openclaw`
+- Visit `https://<your-app>.up.railway.app/` and `/openclaw` (same Basic auth)
 
 ## Support / community
 
