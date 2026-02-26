@@ -3,6 +3,7 @@
 
 (function () {
   var statusEl = document.getElementById('status');
+  var statusDetailsEl = document.getElementById('statusDetails');
   var authGroupEl = document.getElementById('authGroup');
   var authChoiceEl = document.getElementById('authChoice');
   var logEl = document.getElementById('log');
@@ -29,8 +30,26 @@
     statusEl.textContent = s;
   }
 
+  function isInteractiveOAuth(optionValue, optionLabel) {
+    var v = String(optionValue || '');
+    var l = String(optionLabel || '');
+    return l.indexOf('OAuth') !== -1 || v.indexOf('cli') !== -1 || v.indexOf('codex') !== -1 || v.indexOf('portal') !== -1;
+  }
+
   function renderAuth(groups) {
     authGroupEl.innerHTML = '';
+
+    // Toggle for showing interactive OAuth choices.
+    var advancedToggle = document.getElementById('showAdvancedAuth');
+    if (!advancedToggle) {
+      advancedToggle = document.createElement('label');
+      advancedToggle.style.display = 'block';
+      advancedToggle.style.marginTop = '0.5rem';
+      advancedToggle.innerHTML = '<input type="checkbox" id="showAdvancedAuth" /> Show interactive OAuth options (advanced)';
+      // Insert before authChoiceEl (not its parentNode) to avoid DOM error
+      authGroupEl.parentNode.insertBefore(advancedToggle, authChoiceEl);
+    }
+
     for (var i = 0; i < groups.length; i++) {
       var g = groups[i];
       var opt = document.createElement('option');
@@ -39,23 +58,37 @@
       authGroupEl.appendChild(opt);
     }
 
-    authGroupEl.onchange = function () {
+    function rerenderChoices() {
       var sel = null;
       for (var j = 0; j < groups.length; j++) {
         if (groups[j].value === authGroupEl.value) sel = groups[j];
       }
       authChoiceEl.innerHTML = '';
       var opts = (sel && sel.options) ? sel.options : [];
+      var showAdv = Boolean(document.getElementById('showAdvancedAuth') && document.getElementById('showAdvancedAuth').checked);
+
+      var firstNonInteractive = null;
       for (var k = 0; k < opts.length; k++) {
         var o = opts[k];
+        var interactive = isInteractiveOAuth(o.value, o.label);
+        if (interactive && !showAdv) continue;
+        if (!interactive && !firstNonInteractive) firstNonInteractive = o.value;
+
         var opt2 = document.createElement('option');
         opt2.value = o.value;
-        opt2.textContent = o.label + (o.hint ? ' - ' + o.hint : '');
+        opt2.textContent = o.label + (interactive ? ' (interactive OAuth)' : '');
         authChoiceEl.appendChild(opt2);
       }
-    };
 
-    authGroupEl.onchange();
+      // Prefer selecting a non-interactive option by default.
+      if (firstNonInteractive) authChoiceEl.value = firstNonInteractive;
+    }
+
+    authGroupEl.onchange = rerenderChoices;
+    var advEl = document.getElementById('showAdvancedAuth');
+    if (advEl) advEl.onchange = rerenderChoices;
+
+    rerenderChoices();
   }
 
   function httpJson(url, opts) {
@@ -73,10 +106,19 @@
 
   function refreshStatus() {
     setStatus('Loading...');
+    if (statusDetailsEl) statusDetailsEl.textContent = '';
+
     return httpJson('/setup/api/status').then(function (j) {
       var ver = j.openclawVersion ? (' | ' + j.openclawVersion) : '';
-      setStatus((j.configured ? 'Configured - open /openclaw' : 'Not configured - run setup below') + ver);
-      renderAuth(j.authGroups || []);
+      setStatus((j.configured ? 'Configured' : 'Not configured - run setup below') + ver);
+
+      if (statusDetailsEl) {
+        var parts = [];
+        parts.push('Gateway target: ' + (j.gatewayTarget || '(unknown)'));
+        parts.push('Tip: /healthz shows wrapper+gateway reachability.');
+        statusDetailsEl.textContent = parts.join('\n');
+      }
+
       // If channels are unsupported, surface it for debugging.
       if (j.channelsAddHelp && j.channelsAddHelp.indexOf('telegram') === -1) {
         logEl.textContent += '\nNote: this openclaw build does not list telegram in `channels add --help`. Telegram auto-add will be skipped.\n';
@@ -89,6 +131,21 @@
 
     }).catch(function (e) {
       setStatus('Error: ' + String(e));
+      if (statusDetailsEl) statusDetailsEl.textContent = '';
+    });
+  }
+
+  // Fast auth group load (no subprocesses). Keeps selects from appearing empty.
+  function loadAuthGroupsFast() {
+    return httpJson('/setup/api/auth-groups').then(function (j) {
+      if (j && j.authGroups && j.authGroups.length > 0) {
+        renderAuth(j.authGroups);
+        return;
+      }
+      throw new Error('Missing authGroups from /setup/api/auth-groups');
+    }).catch(function (e) {
+      console.warn('[setup] authGroups load failed:', e);
+      renderAuth([]);
     });
   }
 
@@ -100,7 +157,13 @@
       telegramToken: document.getElementById('telegramToken').value,
       discordToken: document.getElementById('discordToken').value,
       slackBotToken: document.getElementById('slackBotToken').value,
-      slackAppToken: document.getElementById('slackAppToken').value
+      slackAppToken: document.getElementById('slackAppToken').value,
+
+      customProviderId: document.getElementById('customProviderId').value,
+      customProviderBaseUrl: document.getElementById('customProviderBaseUrl').value,
+      customProviderApi: document.getElementById('customProviderApi').value,
+      customProviderApiKeyEnv: document.getElementById('customProviderApiKeyEnv').value,
+      customProviderModelId: document.getElementById('customProviderModelId').value
     };
 
     logEl.textContent = 'Running...\n';
@@ -235,6 +298,62 @@
     };
   }
 
+  // Device pairing helper
+  var devicesRefreshBtn = document.getElementById('devicesRefresh');
+  var devicesListEl = document.getElementById('devicesList');
+
+  function approveDevice(requestId) {
+    if (!requestId) return;
+    if (!confirm('Approve device request ' + requestId + '?')) return;
+    if (devicesListEl) devicesListEl.textContent = 'Approving ' + requestId + '...';
+
+    return httpJson('/setup/api/devices/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: requestId })
+    }).then(function (j) {
+      if (devicesListEl) devicesListEl.textContent = j.output || 'Approved.';
+      return refreshStatus();
+    }).catch(function (e) {
+      if (devicesListEl) devicesListEl.textContent = 'Error: ' + String(e);
+    });
+  }
+
+  function refreshDevices() {
+    if (!devicesListEl) return;
+    devicesListEl.textContent = 'Loading pending devices...';
+    return httpJson('/setup/api/devices/pending').then(function (j) {
+      var ids = j.requestIds || [];
+      if (!ids.length) {
+        devicesListEl.textContent = 'No pending device requests found.';
+        return;
+      }
+      devicesListEl.innerHTML = '';
+      for (var i = 0; i < ids.length; i++) {
+        (function (id) {
+          var row = document.createElement('div');
+          row.style.marginTop = '0.25rem';
+          var btn = document.createElement('button');
+          btn.textContent = 'Approve ' + id;
+          btn.style.background = '#111';
+          btn.style.marginRight = '0.5rem';
+          btn.onclick = function () { approveDevice(id); };
+          var code = document.createElement('code');
+          code.textContent = id;
+          row.appendChild(btn);
+          row.appendChild(code);
+          devicesListEl.appendChild(row);
+        })(ids[i]);
+      }
+    }).catch(function (e) {
+      devicesListEl.textContent = 'Error: ' + String(e);
+    });
+  }
+
+  if (devicesRefreshBtn) {
+    devicesRefreshBtn.onclick = refreshDevices;
+  }
+
   document.getElementById('reset').onclick = function () {
     if (!confirm('Reset setup? This deletes the config file so onboarding can run again.')) return;
     logEl.textContent = 'Resetting...\n';
@@ -244,5 +363,9 @@
       .catch(function (e) { logEl.textContent += 'Error: ' + String(e) + '\n'; });
   };
 
+  // Populate provider/auth selects ASAP (fast endpoint, no subprocesses)
+  loadAuthGroupsFast();
+
+  // Load the rest of status (version/help) in parallel
   refreshStatus();
 })();
