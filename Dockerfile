@@ -20,10 +20,12 @@ RUN corepack enable
 
 WORKDIR /openclaw
 
-# Pin to a known-good ref (tag/branch). Override in Railway template settings if needed.
-# Using a released tag avoids build breakage when `main` temporarily references unpublished packages.
-ARG OPENCLAW_GIT_REF=v2026.2.9
-RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
+# Default to `main` to pick up recent fixes (e.g., OPENCLAW_CANVAS_HOST_URL), but note this may
+# cause build breakage if `main` temporarily references unpublished packages. For stability, pin
+# OPENCLAW_GIT_REF to a released tag or known-good ref (e.g., via Railway template settings).
+ARG OPENCLAW_GIT_REF=main
+ARG OPENCLAW_BUILD_TIMESTAMP=2026-02-26-T22-38
+RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/ABFS-Inc/openclaw.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
 # Apply to all extension package.json files to handle workspace protocol (workspace:*).
@@ -46,10 +48,27 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     tini \
     python3 \
     python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+# Install uv (Python package manager required by skills like nano-banana-pro)
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# Install Homebrew (Linuxbrew) so skills can use `brew install` at runtime.
+# Homebrew refuses to run as root, so we switch to the linuxbrew user for installation,
+# then switch back to root for the remaining Dockerfile steps.
+RUN useradd -m -s /bin/bash linuxbrew
+USER linuxbrew
+RUN NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+  && /home/linuxbrew/.linuxbrew/bin/brew install steipete/tap/gogcli \
+  && /home/linuxbrew/.linuxbrew/bin/brew cleanup --prune=all \
+  && rm -rf /home/linuxbrew/.linuxbrew/Library/Taps/homebrew/homebrew-core/.git
+USER root
+# Add brew bin to PATH so gog and other Homebrew-installed tools are automatically discoverable.
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
