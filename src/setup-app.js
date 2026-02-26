@@ -162,6 +162,7 @@
       customProviderId: document.getElementById('customProviderId').value,
       customProviderBaseUrl: document.getElementById('customProviderBaseUrl').value,
       customProviderApi: document.getElementById('customProviderApi').value,
+      customProviderApiKey: document.getElementById('customProviderApiKey').value,
       customProviderApiKeyEnv: document.getElementById('customProviderApiKeyEnv').value,
       customProviderModelId: document.getElementById('customProviderModelId').value
     };
