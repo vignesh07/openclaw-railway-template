@@ -24,7 +24,7 @@ WORKDIR /openclaw
 # cause build breakage if `main` temporarily references unpublished packages. For stability, pin
 # OPENCLAW_GIT_REF to a released tag or known-good ref (e.g., via Railway template settings).
 ARG OPENCLAW_GIT_REF=main
-ARG OPENCLAW_BUILD_TIMESTAMP=2026-02-26-T22-12
+ARG OPENCLAW_BUILD_TIMESTAMP=2026-02-26-T22-38
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/ABFS-Inc/openclaw.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
