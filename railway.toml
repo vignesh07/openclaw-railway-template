@@ -15,3 +15,9 @@ requiredMountPath = "/data"
 # can cause domain routing mismatches.
 OPENCLAW_STATE_DIR = "/data/.openclaw"
 OPENCLAW_WORKSPACE_DIR = "/data/workspace"
+
+# Railway injects RAILWAY_PUBLIC_DOMAIN automatically and this template uses it
+# to populate gateway.controlUi.allowedOrigins, which is required since openclaw
+# added origin-checking to the Control UI WebSocket in recent releases.
+# If you use a custom domain, add it here (comma-separated full origins):
+# OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS = "https://my-custom-domain.example.com"
