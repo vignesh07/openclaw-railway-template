@@ -35,7 +35,10 @@ RUN set -eux; \
     sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*"workspace:[^"]+"/"openclaw": "*"/g' "$f"; \
   done
 
-RUN pnpm install --frozen-lockfile
+# We intentionally rewrite dependency specifiers above to avoid unpublished-version drift
+# in upstream extension manifests. That makes the upstream lockfile stale by definition,
+# so `--frozen-lockfile` will fail here.
+RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
