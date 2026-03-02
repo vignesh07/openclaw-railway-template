@@ -121,6 +121,19 @@ tailscale ssh <TS_HOSTNAME>
 
 No password. No exposed SSH port. Access is gated entirely by your Tailscale ACL policy.
 
+### 7. Log noise — expected and benign
+
+Tailscale writes most of its logs to stderr and prefixes many lines with `[err]` even when they are informational. In Railway logs you may see:
+
+| Message | Meaning |
+|---|---|
+| `logpolicy.ConfigFromFile ... no such file or directory` | Tailscale looks for a log config in `/var/lib/tailscale`; we use `--statedir=/data/tailscale`. Harmless — it falls back to defaults. |
+| `TPM: error opening: stat /dev/tpmrm0` | TPM hardware is not available in containers. Harmless. |
+| `magicsock: failed to force-set UDP read/write buffer size` | Common in restricted containers. Only affects throughput, not connectivity. |
+| `dns: inotify: NewDirWatcher: context canceled` | Normal during startup. |
+
+If you see `Tailscale joined. Node ready for SSH access.` and `[wrapper] listening on :8080`, the deployment is healthy.
+
 ---
 
 ## Contributor checklist — before opening a PR

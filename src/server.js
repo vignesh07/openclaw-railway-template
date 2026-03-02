@@ -1465,6 +1465,18 @@ app.use(requireDashboardAuth, async (req, res) => {
   return proxy.web(req, res, { target: GATEWAY_TARGET });
 });
 
+// Global error handler: return JSON instead of HTML so setup UI and clients get actionable errors.
+app.use((err, _req, res, _next) => {
+  console.error("[wrapper] unhandled error:", err);
+  if (!res.headersSent) {
+    res.status(500).json({
+      ok: false,
+      output: `Internal error: ${String(err?.message ?? err)}`,
+      error: String(err?.message ?? err),
+    });
+  }
+});
+
 const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`[wrapper] listening on :${PORT}`);
   console.log(`[wrapper] state dir: ${STATE_DIR}`);

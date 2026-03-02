@@ -192,6 +192,12 @@ Checklist:
 - Ensure **Public Networking** is enabled (Railway will inject `PORT`).
 - Check Railway logs for the wrapper error: it will show `Gateway not ready:` with the reason.
 
+**"Internal Server Error" when running setup?** Check Railway logs for `[wrapper] unhandled error:` — you must select an auth method (e.g. OpenAI API key) and paste the key; ensure a Volume is mounted at `/data`.
+
+### Tailscale logs show many `[err]` lines
+
+Tailscale writes most logs to stderr and uses `[err]` for many non-error messages. Messages like `logpolicy.ConfigFromFile ... no such file`, `TPM: error opening`, and `magicsock: failed to force-set UDP buffer size` are **expected and harmless** in containers. If you see `Tailscale joined. Node ready for SSH access.` and `[wrapper] listening on :8080`, the deployment is healthy. See [docs/SECURITY.md](docs/SECURITY.md#7-log-noise--expected-and-benign) for details.
+
 ### Legacy CLAWDBOT_* env vars / multiple state directories
 
 If you see warnings about deprecated `CLAWDBOT_*` variables or state dir split-brain (e.g. `~/.openclaw` vs `/data/...`):
