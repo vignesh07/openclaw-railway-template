@@ -1,0 +1,121 @@
+# Build openclaw from source to avoid npm packaging gaps (some dist files are not shipped).
+FROM node:22-bookworm AS openclaw-build
+
+# Dependencies needed for openclaw build
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    curl \
+    python3 \
+    make \
+    g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Bun (openclaw build uses it)
+ARG BUN_VERSION=1.2.22
+RUN curl -fsSL https://bun.sh/install | bash -s -- "bun-v${BUN_VERSION}" \
+  && /root/.bun/bin/bun --version | grep -Fx "${BUN_VERSION}"
+ENV PATH="/root/.bun/bin:${PATH}"
+
+RUN corepack enable
+
+WORKDIR /openclaw
+
+# Pin to a known-good ref (tag/branch). Override in Railway template settings if needed.
+# Using a released tag avoids build breakage when `main` temporarily references unpublished packages.
+ARG OPENCLAW_GIT_REF=v2026.2.9
+RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
+
+# Patch: relax version requirements for packages that may reference unpublished versions.
+# Apply to all extension package.json files to handle workspace protocol (workspace:*).
+RUN set -eux; \
+  find ./extensions -name 'package.json' -type f | while read -r f; do \
+    sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*">=[^"]+"/"openclaw": "*"/g' "$f"; \
+    sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*"workspace:[^"]+"/"openclaw": "*"/g' "$f"; \
+  done
+
+# We intentionally rewrite dependency specifiers above to avoid upstream unpublished-version drift
+# in upstream extension manifests. That makes the upstream lockfile stale by definition,
+# so `--frozen-lockfile` will fail here.
+RUN pnpm install --no-frozen-lockfile
+RUN pnpm build
+ENV OPENCLAW_PREFER_PNPM=1
+RUN pnpm ui:install && pnpm ui:build
+
+
+# Runtime image
+FROM node:22-bookworm
+ENV NODE_ENV=production
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tini \
+    gosu \
+    python3 \
+    python3-venv \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Tailscale for SSH access via Tailscale network
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg \
+    | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
+  && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list \
+    | tee /etc/apt/sources.list.d/tailscale.list \
+  && apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tailscale \
+  && rm -rf /var/lib/apt/lists/*
+
+# `openclaw update` expects pnpm. Provide it in the runtime image.
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+# Persist user-installed tools by default by targeting the Railway volume.
+# - npm global installs -> /data/npm
+# - pnpm global installs -> /data/pnpm (binaries) + /data/pnpm-store (store)
+ENV NPM_CONFIG_PREFIX=/data/npm
+ENV NPM_CONFIG_CACHE=/data/npm-cache
+ENV PNPM_HOME=/data/pnpm
+ENV PNPM_STORE_DIR=/data/pnpm-store
+ENV PATH="/data/npm/bin:/data/pnpm:${PATH}"
+
+WORKDIR /app
+
+# Wrapper deps
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Copy built openclaw
+COPY --from=openclaw-build /openclaw /openclaw
+
+# Provide an openclaw executable
+RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
+  && chmod +x /usr/local/bin/openclaw
+
+COPY src ./src
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint-tailscale.sh /usr/local/bin/entrypoint-tailscale.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint-tailscale.sh \
+  && groupadd --system --gid 10001 openclaw \
+  && useradd --system --uid 10001 --gid openclaw --create-home --home-dir /home/openclaw openclaw
+
+# Tailscale configuration for key-based SSH access
+# TS_AUTHKEY: MUST be set at runtime via Railway Variables or -e. Never commit a real key.
+# Use Railway's secret variables or a secrets manager. Generate at: https://login.tailscale.com/admin/settings/keys
+ENV TS_AUTHKEY=""
+ENV TS_HOSTNAME=claw-archimedes
+# --accept-routes: accept advertised routes from other nodes
+# --accept-dns=false: do not use Tailscale DNS (container keeps host DNS)
+# --tun=userspace-networking: required for containers without /dev/net/tun
+ENV TS_EXTRA_ARGS="--accept-routes --accept-dns=false"
+ENV TS_USERSPACE=true
+
+# The wrapper listens on $PORT.
+# IMPORTANT: Do not set a default PORT here.
+# Railway injects PORT at runtime and routes traffic to that port.
+# If we force a different port, deployments can come up but the domain will route elsewhere.
+EXPOSE 8080
+
+# Ensure PID 1 reaps zombies and forwards signals. Tailscale entrypoint starts tailscaled, runs tailscale up, then drops to openclaw user.
+ENTRYPOINT ["tini", "--", "/usr/local/bin/entrypoint-tailscale.sh"]
+CMD ["node", "src/server.js"]

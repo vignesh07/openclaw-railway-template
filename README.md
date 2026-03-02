@@ -49,6 +49,15 @@ Then:
 - Complete setup
 - Visit `https://<your-app>.up.railway.app/` and `/openclaw` (same Basic auth)
 
+### Tailscale SSH (optional)
+
+For passwordless SSH access via Tailscale:
+
+1. Set `RAILWAY_DOCKERFILE_PATH=Dockerfile-tailscale` in Railway Variables.
+2. Add `TS_AUTHKEY` as a **secret** variable (generate at [Tailscale Admin](https://login.tailscale.com/admin/settings/keys)). Never commit auth keys.
+3. Optionally set `TS_HOSTNAME` (default: `claw-archimedes`) for identification in your tailnet.
+4. Deploy. From another Tailscale device: `tailscale ssh claw-archimedes` (or your hostname).
+
 ## Support / community
 
 - GitHub Issues: https://github.com/vignesh07/clawdbot-railway-template/issues
