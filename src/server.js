@@ -803,7 +803,7 @@ app.post("/setup/api/run", requireSetupAuth, requireSetupCsrf, async (req, res) 
     // remains correct when X-Forwarded-* headers are present.
     await runCmd(
       OPENCLAW_NODE,
-      clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1"]) ]),
+      clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "::1"])]),
     );
 
     // Optional: configure a custom OpenAI-compatible provider (base URL) for advanced users.
@@ -1435,8 +1435,11 @@ function attachGatewayAuthHeader(req) {
   }
 }
 
-proxy.on("proxyReqWs", (_proxyReq, req) => {
-  attachGatewayAuthHeader(req);
+proxy.on("proxyReqWs", (proxyReq, req) => {
+  // Set Authorization on the outgoing request to the gateway (proxyReq), not the incoming req.
+  if (!proxyReq.getHeader("authorization") && OPENCLAW_GATEWAY_TOKEN) {
+    proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
 });
 
 app.use(requireDashboardAuth, async (req, res) => {
@@ -1514,18 +1517,23 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     }
   }
 
-  // Sync gateway tokens in config with the current env var on every startup.
+  // Sync gateway tokens and trustedProxies in config with the current env var on every startup.
   // This prevents "gateway token mismatch" when OPENCLAW_GATEWAY_TOKEN changes
   // (e.g. Railway variable update) but the config file still has the old value.
+  // trustedProxies ensures the gateway treats connections from the wrapper (127.0.0.1) as local.
   if (isConfigured() && OPENCLAW_GATEWAY_TOKEN) {
-    console.log("[wrapper] syncing gateway tokens in config...");
+    console.log("[wrapper] syncing gateway tokens and trustedProxies in config...");
     try {
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
-      console.log("[wrapper] gateway tokens synced");
+      await runCmd(
+        OPENCLAW_NODE,
+        clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "::1"])]),
+      );
+      console.log("[wrapper] gateway tokens and trustedProxies synced");
     } catch (err) {
-      console.warn(`[wrapper] failed to sync gateway tokens: ${String(err)}`);
+      console.warn(`[wrapper] failed to sync gateway config: ${String(err)}`);
     }
   }
 
