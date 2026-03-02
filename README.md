@@ -61,6 +61,9 @@ Use `Dockerfile-tailscale` for passwordless, key-based SSH access through your T
 3. Set `TS_HOSTNAME` to a name meaningful to you (e.g. `myapp-railway`). Default is the generic `openclaw-railway`.
 4. Deploy. SSH from any Tailscale device: `tailscale ssh <TS_HOSTNAME>`.
 
+By default, Tailscale startup is **non-blocking**: if `tailscale up` fails, the wrapper still starts so `/setup` remains available.  
+Set `TS_STRICT=true` only if you want container startup to fail when Tailscale is unhealthy.
+
 **Key env vars:**
 
 | Variable | Default | Purpose |
@@ -69,6 +72,9 @@ Use `Dockerfile-tailscale` for passwordless, key-based SSH access through your T
 | `TS_HOSTNAME` | `openclaw-railway` | Node name in your tailnet. Set to something meaningful to you. |
 | `TS_EXTRA_ARGS` | `--accept-routes --accept-dns=false` | Extra flags passed to `tailscale up`. |
 | `TS_USERSPACE` | `true` | Enables userspace networking (required without `/dev/net/tun`). |
+| `TS_STRICT` | `false` | If `true`, container exits when `tailscale up` cannot succeed. |
+| `TS_UP_RETRIES` | `3` | Retry count for `tailscale up` during startup. |
+| `TS_UP_RETRY_DELAY_SEC` | `2` | Delay between `tailscale up` retries. |
 
 **ACL policy:**
 See `access-controls.example.json` for a sanitized template. Copy it to your [Tailscale admin console](https://login.tailscale.com/admin/acls) and substitute your own email and tag. Your real `access controls.json` is git-ignored — never commit it.
@@ -118,6 +124,29 @@ What does *not* persist cleanly:
 
 If `/data/workspace/bootstrap.sh` exists, the wrapper will run it on startup (best-effort) before starting the gateway.
 Use this to initialize persistent install prefixes or create a venv.
+
+### Out-of-box bootstrap via Railway Variables
+
+This image also supports non-root-safe preinstalls at startup (no `sudo` required):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENCLAW_AUTO_PREINSTALL` | `true` | Enables startup preinstall/bootstrap behavior. |
+| `OPENCLAW_PREINSTALL_NPM_PACKAGES` | `clawhub` | Comma-separated npm global packages installed into `/data/npm`. |
+| `OPENCLAW_PREINSTALL_PIP_PACKAGES` | _(empty)_ | Comma-separated python packages installed with `pip --user`. |
+| `OPENCLAW_EXPOSE_ENV_VARS` | _(empty)_ | Comma-separated env var names written to `/data/workspace/.openclaw-runtime.env`. |
+| `OPENCLAW_WRITE_AGENTS_MD` | `true` | Creates `/data/workspace/AGENTS.md` if missing. |
+| `OPENCLAW_BOOTSTRAP_SKILLS` | `true` | Creates starter skill markdown files under `/data/workspace/.openclaw/skills`. |
+
+Example:
+
+```bash
+OPENCLAW_PREINSTALL_NPM_PACKAGES=clawhub,@openclaw/cli-tools
+OPENCLAW_PREINSTALL_PIP_PACKAGES=awscli
+OPENCLAW_EXPOSE_ENV_VARS=OPENCLAW_STATE_DIR,OPENCLAW_WORKSPACE_DIR,OPENCLAW_GATEWAY_TOKEN
+```
+
+> `OPENCLAW_EXPOSE_ENV_VARS` can expose secrets to agent-visible files. Only include variables you explicitly want surfaced in workspace context.
 
 Example `bootstrap.sh`:
 

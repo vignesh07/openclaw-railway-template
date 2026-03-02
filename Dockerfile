@@ -84,9 +84,21 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
 
 COPY src ./src
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh \
+COPY docker/prestart-common.sh /usr/local/bin/prestart-common.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/prestart-common.sh \
   && groupadd --system --gid 10001 openclaw \
   && useradd --system --uid 10001 --gid openclaw --create-home --home-dir /home/openclaw openclaw
+
+# Optional out-of-box bootstrap behavior (non-root safe):
+# - installs npm globals (default: clawhub) into /data/npm
+# - can install optional python packages into user site
+# - can project selected env vars into /data/workspace/.openclaw-runtime.env for agent context
+ENV OPENCLAW_AUTO_PREINSTALL=true
+ENV OPENCLAW_PREINSTALL_NPM_PACKAGES="clawhub"
+ENV OPENCLAW_PREINSTALL_PIP_PACKAGES=""
+ENV OPENCLAW_EXPOSE_ENV_VARS=""
+ENV OPENCLAW_WRITE_AGENTS_MD=true
+ENV OPENCLAW_BOOTSTRAP_SKILLS=true
 
 # The wrapper listens on $PORT.
 # IMPORTANT: Do not set a default PORT here.

@@ -37,6 +37,7 @@ This document covers how credentials, personal identifiers, and sensitive config
 | `OPENCLAW_GATEWAY_TOKEN` | Protects the OpenClaw gateway | If unset, one is auto-generated (less ideal for templates) |
 | `TS_AUTHKEY` | Authenticates the container to your Tailscale network | Generate at [Tailscale Admin → Settings → Keys](https://login.tailscale.com/admin/settings/keys). Mark as ephemeral if desired. |
 | `TS_HOSTNAME` | Node name visible in your tailnet | Set to something meaningful to you (e.g. `myapp-prod`). Default is the generic `openclaw-railway`. |
+| `TS_STRICT` | Controls Tailscale startup behavior | `false` keeps setup reachable even if Tailscale is down; `true` enforces fail-closed startup. |
 
 ### Recommended (set in Railway Variables)
 
@@ -51,6 +52,7 @@ This document covers how credentials, personal identifiers, and sensitive config
 - `TS_AUTHKEY` — auth keys are credentials; treat like passwords
 - `SETUP_PASSWORD` — user-defined secret
 - Any real email address, device IP, or personal hostname
+- `OPENCLAW_EXPOSE_ENV_VARS` containing secrets you do not want agents to read from workspace files
 
 ---
 

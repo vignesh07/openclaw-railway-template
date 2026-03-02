@@ -3,40 +3,54 @@ set -euo pipefail
 
 APP_USER="${APP_USER:-openclaw}"
 APP_GROUP="${APP_GROUP:-openclaw}"
+TS_STATE_DIR="${TS_STATE_DIR:-/data/tailscale}"
+TS_SOCKET="${TS_SOCKET:-/tmp/tailscaled.sock}"
+TS_UP_RETRIES="${TS_UP_RETRIES:-3}"
+TS_UP_RETRY_DELAY_SEC="${TS_UP_RETRY_DELAY_SEC:-2}"
+TS_STRICT="${TS_STRICT:-false}"
 
-ensure_dir() {
-  local dir="$1"
-  mkdir -p "$dir" || true
-  # When running as root, always chown so openclaw user can write after gosu.
-  # The "! -w" check fails for root (root can always write), so we'd never chown otherwise.
-  if [ "$(id -u)" = "0" ] || [ ! -w "$dir" ]; then
-    chown -R "${APP_USER}:${APP_GROUP}" "$dir" || true
-  fi
+log() {
+  echo "[tailscale] $*"
 }
 
-# Keep persistent paths writable even when Railway mounts /data as root-owned.
-ensure_dir /data
-ensure_dir /data/.openclaw
-ensure_dir /data/workspace
-ensure_dir /data/npm
-ensure_dir /data/npm-cache
-ensure_dir /data/pnpm
-ensure_dir /data/pnpm-store
-ensure_dir /data/tailscale
-ensure_dir /app
-ensure_dir /home/openclaw
+# Shared writable-dir setup + optional non-root preinstalls/bootstrap.
+. /usr/local/bin/prestart-common.sh
+prestart_common
+ensure_dir "${TS_STATE_DIR}"
 
-# Start Tailscale if TS_AUTHKEY is set
-if [ -n "${TS_AUTHKEY:-}" ]; then
-  echo "Starting Tailscale..."
-  tailscaled --statedir=/data/tailscale --tun=userspace-networking &
-  TAILSCALE_PID=$!
-  # Wait for tailscaled to be ready
+start_tailscale_non_blocking() {
+  [ -n "${TS_AUTHKEY:-}" ] || {
+    log "TS_AUTHKEY not set; skipping Tailscale"
+    return 0
+  }
+
+  log "Starting tailscaled in userspace mode"
+  tailscaled --statedir="${TS_STATE_DIR}" --socket="${TS_SOCKET}" --tun=userspace-networking &
+  local tailscaled_pid=$!
   sleep 2
-  tailscale up --auth-key="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-openclaw-railway}" --ssh ${TS_EXTRA_ARGS:-}
-  echo "Tailscale joined. Node ready for SSH access."
-else
-  echo "TS_AUTHKEY not set; skipping Tailscale. Set via Railway Variables or -e for SSH access."
-fi
+
+  local attempt=1
+  while [ "${attempt}" -le "${TS_UP_RETRIES}" ]; do
+    log "Running tailscale up (attempt ${attempt}/${TS_UP_RETRIES})"
+    if tailscale --socket="${TS_SOCKET}" up --auth-key="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-openclaw-railway}" --ssh ${TS_EXTRA_ARGS:-}; then
+      log "Tailscale joined. Node ready for SSH access."
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep "${TS_UP_RETRY_DELAY_SEC}"
+  done
+
+  log "tailscale up failed after ${TS_UP_RETRIES} attempts"
+  if [ "${TS_STRICT}" = "true" ]; then
+    log "TS_STRICT=true, exiting because Tailscale failed"
+    kill "${tailscaled_pid}" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  log "Continuing without a healthy Tailscale session so app setup remains available"
+  return 0
+}
+
+start_tailscale_non_blocking
 
 exec gosu "${APP_USER}:${APP_GROUP}" "$@"

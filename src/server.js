@@ -754,6 +754,16 @@ function runCmd(cmd, args, opts = {}) {
   });
 }
 
+async function runCmdChecked(cmd, args, opts = {}) {
+  const r = await runCmd(cmd, args, opts);
+  if (r.code !== 0) {
+    const commandStr = [cmd, ...(args || [])].join(" ");
+    const out = (r.output || "").trim();
+    throw new Error(`[cmd failed] exit=${r.code} :: ${commandStr}\n${out || "(no output)"}`);
+  }
+  return r;
+}
+
 app.post("/setup/api/run", requireSetupAuth, requireSetupCsrf, async (req, res) => {
   const respondJson = (status, body) => {
     if (res.writableEnded || res.headersSent) return;
@@ -789,19 +799,23 @@ app.post("/setup/api/run", requireSetupAuth, requireSetupCsrf, async (req, res) 
 
   // Optional setup (only after successful onboarding).
   if (ok) {
+    // `openclaw config set` can require a reachable gateway.
+    // Ensure the wrapper-managed gateway is up before mutating token-related config.
+    await ensureGatewayRunning();
+
     // Ensure gateway token is written into config so the browser UI can authenticate reliably.
     // (We also enforce loopback bind since the wrapper proxies externally.)
     // IMPORTANT: Set both gateway.auth.token (server-side) and gateway.remote.token (client-side)
     // to the same value so the Control UI can connect without "token mismatch" errors.
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
-    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+    await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
+    await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+    await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+    await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
+    await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
 
     // Railway runs behind a reverse proxy. Trust loopback as a proxy hop so local client detection
     // remains correct when X-Forwarded-* headers are present.
-    await runCmd(
+    await runCmdChecked(
       OPENCLAW_NODE,
       clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "::1"])]),
     );
@@ -1430,15 +1444,33 @@ function rejectUpgradeUnauthorized(socket, realm) {
 // cannot set custom Authorization headers for WebSocket connections, so we inject
 // the token into proxied requests at the wrapper level.
 function attachGatewayAuthHeader(req) {
-  if (!req?.headers?.authorization && OPENCLAW_GATEWAY_TOKEN) {
+  if (!req?.headers || !OPENCLAW_GATEWAY_TOKEN) return;
+  if (!req.headers.authorization) {
     req.headers.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+  }
+  // Some OpenClaw builds/middlewares can consume an explicit token header.
+  if (!req.headers["x-openclaw-token"]) {
+    req.headers["x-openclaw-token"] = OPENCLAW_GATEWAY_TOKEN;
   }
 }
 
+proxy.on("proxyReq", (proxyReq) => {
+  if (!OPENCLAW_GATEWAY_TOKEN) return;
+  if (!proxyReq.getHeader("authorization")) {
+    proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+  if (!proxyReq.getHeader("x-openclaw-token")) {
+    proxyReq.setHeader("x-openclaw-token", OPENCLAW_GATEWAY_TOKEN);
+  }
+});
+
 proxy.on("proxyReqWs", (proxyReq, req) => {
-  // Set Authorization on the outgoing request to the gateway (proxyReq), not the incoming req.
+  // Set auth on the outgoing request to the gateway (proxyReq), not the incoming req.
   if (!proxyReq.getHeader("authorization") && OPENCLAW_GATEWAY_TOKEN) {
     proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+  if (!proxyReq.getHeader("x-openclaw-token") && OPENCLAW_GATEWAY_TOKEN) {
+    proxyReq.setHeader("x-openclaw-token", OPENCLAW_GATEWAY_TOKEN);
   }
 });
 
@@ -1524,13 +1556,18 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
   if (isConfigured() && OPENCLAW_GATEWAY_TOKEN) {
     console.log("[wrapper] syncing gateway tokens and trustedProxies in config...");
     try {
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
-      await runCmd(
+      // Bring up the wrapper-managed gateway first so config set calls can succeed reliably.
+      await ensureGatewayRunning();
+
+      await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
+      await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+      await runCmdChecked(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+      await runCmdChecked(
         OPENCLAW_NODE,
         clawArgs(["config", "set", "--json", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "::1"])]),
       );
+      // Restart once after sync so all gateway components pick up config consistently.
+      await restartGateway();
       console.log("[wrapper] gateway tokens and trustedProxies synced");
     } catch (err) {
       console.warn(`[wrapper] failed to sync gateway config: ${String(err)}`);
