@@ -31,7 +31,7 @@ if [ -n "${TS_AUTHKEY:-}" ]; then
   TAILSCALE_PID=$!
   # Wait for tailscaled to be ready
   sleep 2
-  tailscale up --auth-key="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-claw-archimedes}" --ssh ${TS_EXTRA_ARGS:-}
+  tailscale up --auth-key="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-openclaw-railway}" --ssh ${TS_EXTRA_ARGS:-}
   echo "Tailscale joined. Node ready for SSH access."
 else
   echo "TS_AUTHKEY not set; skipping Tailscale. Set via Railway Variables or -e for SSH access."

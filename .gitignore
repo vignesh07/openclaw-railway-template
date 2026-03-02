@@ -11,5 +11,8 @@ npm-debug.log*
 # Backup exports
 *.tar.gz
 
+# Personal Tailscale ACL configs (contain real emails/tags — keep local only)
+access controls.json
+
 # OS
 .DS_Store

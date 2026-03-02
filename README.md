@@ -55,8 +55,12 @@ For passwordless SSH access via Tailscale:
 
 1. Set `RAILWAY_DOCKERFILE_PATH=Dockerfile-tailscale` in Railway Variables.
 2. Add `TS_AUTHKEY` as a **secret** variable (generate at [Tailscale Admin](https://login.tailscale.com/admin/settings/keys)). Never commit auth keys.
-3. Optionally set `TS_HOSTNAME` (default: `claw-archimedes`) for identification in your tailnet.
-4. Deploy. From another Tailscale device: `tailscale ssh claw-archimedes` (or your hostname).
+3. Set `TS_HOSTNAME` to a name meaningful to you (e.g. `myapp-railway`). Default is `openclaw-railway`.
+4. Deploy. From another Tailscale device: `tailscale ssh <TS_HOSTNAME>`.
+
+> ACL policy: see `access-controls.example.json` for a sanitized template. Copy it to the
+> Tailscale admin console and substitute your own email and tag. Never commit your real
+> `access controls.json` — it is git-ignored to prevent accidental exposure.
 
 ## Support / community
 

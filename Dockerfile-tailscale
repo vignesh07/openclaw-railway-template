@@ -103,7 +103,10 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint-tailscale.sh
 # TS_AUTHKEY: MUST be set at runtime via Railway Variables or -e. Never commit a real key.
 # Use Railway's secret variables or a secrets manager. Generate at: https://login.tailscale.com/admin/settings/keys
 ENV TS_AUTHKEY=""
-ENV TS_HOSTNAME=claw-archimedes
+# Set TS_HOSTNAME via Railway Variables to identify this node in your tailnet.
+# Use something meaningful to you (e.g. "openclaw-prod", "myapp-railway").
+# Default is generic so no personal identifiers are baked into the image.
+ENV TS_HOSTNAME=openclaw-railway
 # --accept-routes: accept advertised routes from other nodes
 # --accept-dns=false: do not use Tailscale DNS (container keeps host DNS)
 # --tun=userspace-networking: required for containers without /dev/net/tun
