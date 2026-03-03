@@ -171,12 +171,76 @@ async function waitForGatewayReady(opts = {}) {
   return false;
 }
 
+// Build the list of origins that should be allowed by gateway.controlUi.allowedOrigins.
+// Sources:
+//   RAILWAY_PUBLIC_DOMAIN  – injected automatically by Railway (e.g. "my-app.up.railway.app")
+//   OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS – comma-separated extra origins set by the operator
+function buildControlUiAllowedOrigins() {
+  const origins = new Set();
+
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (railwayDomain) {
+    origins.add(`https://${railwayDomain}`);
+  }
+
+  const extra = process.env.OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS?.trim();
+  if (extra) {
+    for (const o of extra.split(",")) {
+      const t = o.trim();
+      if (t) origins.add(t);
+    }
+  }
+
+  return [...origins];
+}
+
+// Patch gateway.controlUi.allowedOrigins in the openclaw config file so the new
+// origin-check introduced in recent openclaw releases doesn't block Railway deployments.
+// Only runs when there is an existing config and at least one origin to add.
+function patchGatewayAllowedOrigins() {
+  const origins = buildControlUiAllowedOrigins();
+  if (origins.length === 0) return;
+
+  const p = configPath();
+  let config = {};
+  try {
+    config = JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    // Config doesn't exist yet or is not valid JSON – skip patching, the user
+    // hasn't run the setup flow yet and the gateway won't start anyway.
+    return;
+  }
+
+  if (!config.gateway) config.gateway = {};
+  if (!config.gateway.controlUi) config.gateway.controlUi = {};
+
+  const existing = Array.isArray(config.gateway.controlUi.allowedOrigins)
+    ? config.gateway.controlUi.allowedOrigins
+    : [];
+  const merged = [...new Set([...existing, ...origins])];
+
+  // Only write if the list actually changed to avoid spurious disk writes.
+  if (JSON.stringify(merged) === JSON.stringify(existing)) return;
+
+  config.gateway.controlUi.allowedOrigins = merged;
+  try {
+    fs.writeFileSync(p, JSON.stringify(config, null, 2) + "\n", "utf8");
+    console.log(`[gateway] controlUi.allowedOrigins patched → ${JSON.stringify(merged)}`);
+  } catch (err) {
+    console.warn(`[gateway] Failed to patch controlUi.allowedOrigins: ${err}`);
+  }
+}
+
 async function startGateway() {
   if (gatewayProc) return;
   if (!isConfigured()) throw new Error("Gateway cannot start: not configured");
 
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+
+  // Ensure the Railway public domain (and any explicit overrides) are in the
+  // gateway.controlUi.allowedOrigins list before the process starts.
+  patchGatewayAllowedOrigins();
 
   const args = [
     "gateway",
