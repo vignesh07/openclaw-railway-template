@@ -42,14 +42,15 @@ RUN pnpm ui:install && pnpm ui:build
 # Runtime image
 FROM node:22-bookworm
 ENV NODE_ENV=production
-
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates \
-    tini \
-    python3 \
-    python3-venv \
-  && rm -rf /var/lib/apt/lists/*
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+ ca-certificates \
+ tini \
+ python3 \
+ python3-venv \
+ nano \
+ && rm -rf /var/lib/apt/lists/*
+
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
