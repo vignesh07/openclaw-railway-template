@@ -1,4 +1,4 @@
-# OpenClaw Railway Template (1‑click deploy)
+# OpenClaw Railway Template (1‑click deploy) Version 02.03.2026
 
 This repo packages **OpenClaw** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
 
