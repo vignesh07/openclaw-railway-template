@@ -51,8 +51,7 @@ RUN apt-get update \
  nano \
  && rm -rf /var/lib/apt/lists/*
 
-# Install Amp CLI
-RUN curl -fsSL https://ampcode.com/install.sh | bash
+
 
 # Install Factory Droid CLI
 RUN curl -fsSL https://app.factory.ai/cli | sh
@@ -67,7 +66,7 @@ ENV NPM_CONFIG_PREFIX=/data/npm
 ENV NPM_CONFIG_CACHE=/data/npm-cache
 ENV PNPM_HOME=/data/pnpm
 ENV PNPM_STORE_DIR=/data/pnpm-store
-ENV PATH="/data/npm/bin:/data/pnpm:${PATH}"
+ENV PATH="/data/bin:/data/npm/bin:/data/pnpm:${PATH}"
 
 WORKDIR /app
 
