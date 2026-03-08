@@ -151,21 +151,7 @@ async function waitForGatewayReady(opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 20_000;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    try {
-      // Try the default Control UI base path, then fall back to root.
-      const paths = ["/openclaw", "/"];
-      for (const p of paths) {
-        try {
-          const res = await fetch(`${GATEWAY_TARGET}${p}`, { method: "GET" });
-          // Any HTTP response means the port is open.
-          if (res) return true;
-        } catch {
-          // try next
-        }
-      }
-    } catch {
-      // not ready
-    }
+    if (await probeGateway()) return true;
     await sleep(250);
   }
   return false;
@@ -242,6 +228,7 @@ async function ensureGatewayRunning() {
         if (!ready) {
           throw new Error("Gateway did not become ready in time");
         }
+        lastGatewayError = null;
       } catch (err) {
         const msg = `[gateway] start failure: ${String(err)}`;
         lastGatewayError = msg;
