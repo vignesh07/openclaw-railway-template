@@ -989,6 +989,20 @@ const ALLOWED_CONSOLE_COMMANDS = new Set([
   "openclaw.plugins.enable",
 ]);
 
+const DISABLED_SETUP_CONSOLE_COMMANDS = new Set([
+  "gateway.restart",
+  "gateway.stop",
+  "gateway.start",
+]);
+
+function respondGone(res, error) {
+  return res.status(410).json({
+    ok: false,
+    error,
+    code: "GONE",
+  });
+}
+
 app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
   const payload = req.body || {};
   const cmd = String(payload.cmd || "").trim();
@@ -998,24 +1012,11 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: "Command not allowed" });
   }
 
-  try {
-    if (cmd === "gateway.restart") {
-      await restartGateway();
-      return res.json({ ok: true, output: "Gateway restarted (wrapper-managed).\n" });
-    }
-    if (cmd === "gateway.stop") {
-      if (gatewayProc) {
-        try { gatewayProc.kill("SIGTERM"); } catch {}
-        await sleep(750);
-        gatewayProc = null;
-      }
-      return res.json({ ok: true, output: "Gateway stopped (wrapper-managed).\n" });
-    }
-    if (cmd === "gateway.start") {
-      const r = await ensureGatewayRunning();
-      return res.json({ ok: Boolean(r.ok), output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n` });
-    }
+  if (DISABLED_SETUP_CONSOLE_COMMANDS.has(cmd)) {
+    return respondGone(res, "Gateway lifecycle commands disabled during Milestone 1 buildout.");
+  }
 
+  try {
     if (cmd === "openclaw.version") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
       return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
@@ -1091,32 +1092,7 @@ app.get("/setup/api/config/raw", requireSetupAuth, async (_req, res) => {
 });
 
 app.post("/setup/api/config/raw", requireSetupAuth, async (req, res) => {
-  try {
-    const content = String((req.body && req.body.content) || "");
-    if (content.length > 500_000) {
-      return res.status(413).json({ ok: false, error: "Config too large" });
-    }
-
-    fs.mkdirSync(STATE_DIR, { recursive: true });
-
-    const p = configPath();
-    // Backup
-    if (fs.existsSync(p)) {
-      const backupPath = `${p}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-      fs.copyFileSync(p, backupPath);
-    }
-
-    fs.writeFileSync(p, content, { encoding: "utf8", mode: 0o600 });
-
-    // Apply immediately.
-    if (isConfigured()) {
-      await restartGateway();
-    }
-
-    res.json({ ok: true, path: p });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: String(err) });
-  }
+  return respondGone(res, "Raw config writes disabled. Use /setup/api/config/apply.");
 });
 
 app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
@@ -1145,29 +1121,7 @@ app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
 });
 
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
-  // Reset: stop gateway (frees memory) + delete config file(s) so /setup can rerun.
-  // Keep credentials/sessions/workspace by default.
-  try {
-    // Stop gateway to avoid running gateway + onboard concurrently on small Railway instances.
-    try {
-      if (gatewayProc) {
-        try { gatewayProc.kill("SIGTERM"); } catch {}
-        await sleep(750);
-        gatewayProc = null;
-      }
-    } catch {
-      // ignore
-    }
-
-    const candidates = typeof resolveConfigCandidates === "function" ? resolveConfigCandidates() : [configPath()];
-    for (const p of candidates) {
-      try { fs.rmSync(p, { force: true }); } catch {}
-    }
-
-    res.type("text/plain").send("OK - stopped gateway and deleted config file(s). You can rerun setup now.");
-  } catch (err) {
-    res.status(500).type("text/plain").send(String(err));
-  }
+  return respondGone(res, "Reset disabled during Milestone 1 buildout. Use the dedicated recovery path.");
 });
 
 app.get("/setup/export", requireSetupAuth, async (_req, res) => {
@@ -1258,55 +1212,7 @@ async function readBodyBuffer(req, maxBytes) {
 // Import a backup created by /setup/export.
 // This is intentionally limited to restoring into /data to avoid overwriting arbitrary host paths.
 app.post("/setup/import", requireSetupAuth, async (req, res) => {
-  try {
-    const dataRoot = "/data";
-    if (!isUnderDir(STATE_DIR, dataRoot) || !isUnderDir(WORKSPACE_DIR, dataRoot)) {
-      return res
-        .status(400)
-        .type("text/plain")
-        .send("Import is only supported when OPENCLAW_STATE_DIR and OPENCLAW_WORKSPACE_DIR are under /data (Railway volume).\n");
-    }
-
-    // Stop gateway before restore so we don't overwrite live files.
-    if (gatewayProc) {
-      try { gatewayProc.kill("SIGTERM"); } catch {}
-      await sleep(750);
-      gatewayProc = null;
-    }
-
-    const buf = await readBodyBuffer(req, 250 * 1024 * 1024); // 250MB max
-    if (!buf.length) return res.status(400).type("text/plain").send("Empty body\n");
-
-    // Extract into /data.
-    // We only allow safe relative paths, and we intentionally do NOT delete existing files.
-    // (Users can reset/redeploy or manually clean the volume if desired.)
-    const tmpPath = path.join(os.tmpdir(), `openclaw-import-${Date.now()}.tar.gz`);
-    fs.writeFileSync(tmpPath, buf);
-
-    await tar.x({
-      file: tmpPath,
-      cwd: dataRoot,
-      gzip: true,
-      strict: true,
-      onwarn: () => {},
-      filter: (p) => {
-        // Allow only paths that look safe.
-        return looksSafeTarPath(p);
-      },
-    });
-
-    try { fs.rmSync(tmpPath, { force: true }); } catch {}
-
-    // Restart gateway after restore.
-    if (isConfigured()) {
-      await restartGateway();
-    }
-
-    res.type("text/plain").send("OK - imported backup into /data and restarted gateway.\n");
-  } catch (err) {
-    console.error("[import]", err);
-    res.status(500).type("text/plain").send(String(err));
-  }
+  return respondGone(res, "Backup import disabled during Milestone 1 buildout. Use the dedicated recovery path.");
 });
 
 // Proxy everything else to the gateway.

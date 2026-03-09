@@ -8,7 +8,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web wizard s
 - A friendly **Setup Wizard** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
-- **Import backup** from `/setup` (advanced recovery)
+- **Import backup** from `/setup` (advanced recovery; disabled during Milestone 1 control-plane buildout)
 
 ## How it works (high level)
 
@@ -106,6 +106,13 @@ mkdir -p /data/npm /data/npm-cache /data/pnpm /data/pnpm-store
 ```
 
 ## Troubleshooting
+
+### Milestone 1 control-plane guardrails
+
+- `/setup/api/run` remains initialization-only and is intentionally out of scope for Milestone 1 mutation hardening.
+- `/setup/export` is operator-only export visibility, not the normal recovery path.
+- `/setup/import`, `POST /setup/api/reset`, raw config writes, and setup console gateway lifecycle commands are disabled during Milestone 1 buildout.
+- Break-glass recovery should use the dedicated recovery path, not `/setup/import`, `/setup/api/reset`, or console restart/stop actions.
 
 ### “disconnected (1008): pairing required” / dashboard health offline
 
