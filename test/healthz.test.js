@@ -8,4 +8,6 @@ import fs from "node:fs";
 test("server exposes /healthz endpoint", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   assert.match(src, /app\.get\("\/healthz"/);
+  assert.match(src, /app\.get\("\/setup\/healthz"/);
+  assert.match(src, /evaluateControlPlaneHealth/);
 });

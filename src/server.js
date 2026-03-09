@@ -10,8 +10,11 @@ import * as tar from "tar";
 
 import { createConfigApplyHandler, createRawConfigWriteDisabledHandler } from "./lib/config-apply-route.js";
 import { createApplyMutex } from "./lib/apply-mutex.js";
+import { appendAuditEvent } from "./lib/config-audit-log.js";
+import { buildRecoveryBackupPlan } from "./lib/break-glass-recovery.js";
 import { fetchCurrentConfigState, runConfigMutation } from "./lib/config-ops.js";
 import { loadControlPlanePolicy } from "./lib/control-plane-policy.js";
+import { evaluateControlPlaneHealth, getChannelsProbe, getGatewayStatusProbe, getLiveConfigReadback } from "./lib/gateway-health.js";
 import { listActiveWorkerSessions } from "./lib/worker-activity.js";
 
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
@@ -1013,6 +1016,15 @@ function respondGone(res, error) {
   });
 }
 
+function evaluateRoutingSanityFromLiveConfig(liveConfig, policy) {
+  const livePayload = liveConfig?.payload ?? liveConfig ?? {};
+  const bindings = livePayload?.bindings || [];
+  const agents = livePayload?.agents?.list || [];
+  const targetBinding = bindings.find((binding) => binding?.match?.channel === policy?.primaryChannel);
+  const targetAgent = agents.find((agent) => agent?.id === policy?.primaryAgentId);
+  return Boolean(targetBinding && targetBinding.agentId === policy?.primaryAgentId && targetAgent);
+}
+
 app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
   const payload = req.body || {};
   const cmd = String(payload.cmd || "").trim();
@@ -1114,6 +1126,46 @@ app.post(
     fetchCurrentConfigState,
     runConfigMutation,
     listActiveWorkerSessions,
+    checkPostApplyHealth: async ({ policy }) => {
+      let livenessOk = false;
+      let gatewayStatusOk = false;
+      let channelsReady = false;
+      let routingOk = false;
+
+      try {
+        livenessOk = await probeGateway();
+      } catch {
+        livenessOk = false;
+      }
+
+      try {
+        const gatewayStatus = await getGatewayStatusProbe();
+        gatewayStatusOk = Boolean(gatewayStatus?.ok ?? gatewayStatus);
+      } catch {
+        gatewayStatusOk = false;
+      }
+
+      try {
+        const channelsProbe = await getChannelsProbe();
+        channelsReady = Boolean(channelsProbe?.ok ?? channelsProbe?.ready ?? channelsProbe);
+      } catch {
+        channelsReady = false;
+      }
+
+      try {
+        const liveConfig = await getLiveConfigReadback();
+        routingOk = evaluateRoutingSanityFromLiveConfig(liveConfig, policy);
+      } catch {
+        routingOk = false;
+      }
+
+      return evaluateControlPlaneHealth({
+        livenessOk,
+        gatewayStatusOk,
+        channelsReady,
+        routingOk,
+      });
+    },
     mutex: configApplyMutex,
     auditLogPath: CONFIG_AUDIT_LOG_PATH,
   }),
@@ -1148,6 +1200,27 @@ app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
 
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   return respondGone(res, "Reset disabled during Milestone 1 buildout. Use the dedicated recovery path.");
+});
+
+// Recovery-only break-glass path.
+// This path is separate from normal apply, prefers native backup+verify first,
+// and exists only for operator-led recovery when the native mutation path is unavailable.
+app.post("/setup/api/recovery/break-glass", requireSetupAuth, async (req, res) => {
+  const plan = buildRecoveryBackupPlan(configPath());
+  await appendAuditEvent(CONFIG_AUDIT_LOG_PATH, {
+    event: 'break_glass_requested',
+    mode: 'recovery-only',
+    force: req.body?.force === true,
+    notes: req.body?.note == null ? null : String(req.body.note),
+    actor: req.body?.sessionKey == null ? 'main' : String(req.body.sessionKey),
+    result: 'plan_returned',
+  });
+  return res.status(503).json({
+    ok: false,
+    recoveryOnly: true,
+    error: 'Break-glass recovery transport not implemented yet. Prefer native openclaw backup create + verify first.',
+    plan,
+  });
 });
 
 app.get("/setup/export", requireSetupAuth, async (_req, res) => {

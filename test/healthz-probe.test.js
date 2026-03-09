@@ -6,4 +6,7 @@ test("healthz implements probeGateway (TCP connect)", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   assert.match(src, /async function probeGateway\(/);
   assert.match(src, /node:net/);
+  assert.match(src, /getGatewayStatusProbe/);
+  assert.match(src, /getChannelsProbe/);
+  assert.match(src, /getLiveConfigReadback/);
 });
