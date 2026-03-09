@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+const applyRouteSrc = fs.readFileSync(new URL("../src/lib/config-apply-route.js", import.meta.url), "utf8");
 
 function routeWindow(marker, length = 900) {
   const idx = src.indexOf(marker);
@@ -20,8 +21,10 @@ test("setup raw config writes are disabled with a guarded apply message", () => 
   const helper = helperWindow("function respondGone");
   const window = routeWindow('app.post("/setup/api/config/raw"');
   assert.match(helper, /status\(410\)/);
-  assert.match(window, /Raw config writes disabled\. Use \/setup\/api\/config\/apply\./);
-  assert.match(helper, /code:\s*["']GONE["']/);
+  assert.match(applyRouteSrc, /function createRawConfigWriteDisabledHandler/);
+  assert.match(applyRouteSrc, /Raw config writes disabled\. Use \/setup\/api\/config\/apply\./);
+  assert.match(applyRouteSrc, /code:\s*["']GONE["']/);
+  assert.match(window, /createRawConfigWriteDisabledHandler\(\)/);
 });
 
 test("setup import and reset destructive routes are disabled", () => {

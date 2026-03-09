@@ -8,6 +8,12 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
+import { createConfigApplyHandler, createRawConfigWriteDisabledHandler } from "./lib/config-apply-route.js";
+import { createApplyMutex } from "./lib/apply-mutex.js";
+import { fetchCurrentConfigState, runConfigMutation } from "./lib/config-ops.js";
+import { loadControlPlanePolicy } from "./lib/control-plane-policy.js";
+import { listActiveWorkerSessions } from "./lib/worker-activity.js";
+
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
 // keep working. Users should update their Railway Variables to use the new names.
 for (const suffix of ["PUBLIC_PORT", "STATE_DIR", "WORKSPACE_DIR", "GATEWAY_TOKEN", "CONFIG_PATH"]) {
@@ -41,6 +47,8 @@ const WORKSPACE_DIR =
   path.join(STATE_DIR, "workspace");
 
 const CONFIG_AUDIT_LOG_PATH = path.join(STATE_DIR, 'audit', 'config-ops.jsonl');
+const CONTROL_PLANE_POLICY_PATH = process.env.CONTROL_PLANE_POLICY_PATH?.trim();
+const configApplyMutex = createApplyMutex();
 
 // Protect /setup with a user-provided password.
 const SETUP_PASSWORD = process.env.SETUP_PASSWORD?.trim();
@@ -1093,9 +1101,25 @@ app.get("/setup/api/config/raw", requireSetupAuth, async (_req, res) => {
   }
 });
 
-app.post("/setup/api/config/raw", requireSetupAuth, async (req, res) => {
-  return respondGone(res, "Raw config writes disabled. Use /setup/api/config/apply.");
-});
+app.post(
+  "/setup/api/config/apply",
+  requireSetupAuth,
+  createConfigApplyHandler({
+    loadPolicy: async () => {
+      if (!CONTROL_PLANE_POLICY_PATH) {
+        throw new Error("CONTROL_PLANE_POLICY_PATH is not set");
+      }
+      return loadControlPlanePolicy(CONTROL_PLANE_POLICY_PATH);
+    },
+    fetchCurrentConfigState,
+    runConfigMutation,
+    listActiveWorkerSessions,
+    mutex: configApplyMutex,
+    auditLogPath: CONFIG_AUDIT_LOG_PATH,
+  }),
+);
+
+app.post("/setup/api/config/raw", requireSetupAuth, createRawConfigWriteDisabledHandler());
 
 app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
   const { channel, code } = req.body || {};
