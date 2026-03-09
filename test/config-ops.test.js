@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickConfigOperation, buildMutationRequest } from '../src/lib/config-ops.js';
+import { pickConfigOperation, buildMutationRequest, fetchCurrentConfigState, runConfigMutation } from '../src/lib/config-ops.js';
 
 test('pickConfigOperation uses patch for partial updates', () => {
   assert.equal(pickConfigOperation({ type: 'partial' }), 'config.patch');
@@ -16,4 +16,47 @@ test('buildMutationRequest requires an explicit baseHash', () => {
   assert.equal(req.params.baseHash, 'abc123');
   assert.equal(req.params.sessionKey, 'agent:main:channel:dm:123');
   assert.equal(req.params.note, 'safe apply');
+});
+
+test('fetchCurrentConfigState parses gateway call json output', async () => {
+  const state = await fetchCurrentConfigState({
+    runCmd: async (_cmd, args) => {
+      assert.deepEqual(args, ['gateway', 'call', 'config.get', '--params', '{}', '--json']);
+      return { code: 0, output: JSON.stringify({ hash: 'base123', config: { agents: { list: [] } }, raw: '{}' }) };
+    },
+  });
+  assert.equal(state.hash, 'base123');
+  assert.deepEqual(state.config, { agents: { list: [] } });
+});
+
+test('runConfigMutation executes config.patch and returns parsed result', async () => {
+  const result = await runConfigMutation({
+    change: { type: 'partial', raw: '{"tools":{}}', baseHash: 'base123' },
+    note: 'safe apply',
+    sessionKey: 'main',
+    restartDelayMs: 2000,
+  }, {
+    runCmd: async (_cmd, args) => {
+      assert.deepEqual(args, ['gateway', 'call', 'config.patch', '--params', '{"raw":"{\\"tools\\":{}}","baseHash":"base123","sessionKey":"main","note":"safe apply","restartDelayMs":2000}', '--json']);
+      return { code: 0, output: JSON.stringify({ ok: true, hash: 'next456' }) };
+    },
+  });
+  assert.equal(result.hash, 'next456');
+});
+
+test('runConfigMutation surfaces retryAfterMs on rate limit errors', async () => {
+  await assert.rejects(
+    () => runConfigMutation({
+      change: { type: 'partial', raw: '{"tools":{}}', baseHash: 'base123' },
+      note: 'safe apply',
+      sessionKey: 'main',
+      restartDelayMs: 2000,
+    }, {
+      runCmd: async () => ({ code: 1, output: 'Gateway call failed: rate limit exceeded for config.patch; retryAfterMs=30000' }),
+    }),
+    (error) => {
+      assert.equal(error.retryAfterMs, 30000);
+      return true;
+    },
+  );
 });

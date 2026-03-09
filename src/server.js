@@ -1126,9 +1126,6 @@ app.post(
       }
       return loadControlPlanePolicy(CONTROL_PLANE_POLICY_PATH);
     },
-    fetchCurrentConfigState,
-    runConfigMutation,
-    listActiveWorkerSessions,
     checkPostApplyHealth: async ({ policy }) => {
       let livenessOk = false;
       let gatewayStatusOk = false;
@@ -1142,21 +1139,34 @@ app.post(
       }
 
       try {
-        const gatewayStatus = await getGatewayStatusProbe();
+        const gatewayStatus = await getGatewayStatusProbe({
+          runCmd,
+          openclawNode: OPENCLAW_NODE,
+          clawArgs,
+        });
         gatewayStatusOk = Boolean(gatewayStatus?.ok ?? gatewayStatus);
       } catch {
         gatewayStatusOk = false;
       }
 
       try {
-        const channelsProbe = await getChannelsProbe();
+        const channelsProbe = await getChannelsProbe({
+          runCmd,
+          openclawNode: OPENCLAW_NODE,
+          clawArgs,
+          requiredChannels: policy?.primaryChannel ? [policy.primaryChannel] : [],
+        });
         channelsReady = Boolean(channelsProbe?.ok ?? channelsProbe?.ready ?? channelsProbe);
       } catch {
         channelsReady = false;
       }
 
       try {
-        const liveConfig = await getLiveConfigReadback();
+        const liveConfig = await getLiveConfigReadback({
+          runCmd,
+          openclawNode: OPENCLAW_NODE,
+          clawArgs,
+        });
         routingOk = evaluateRoutingSanityFromLiveConfig(liveConfig, policy);
       } catch {
         routingOk = false;
@@ -1169,6 +1179,20 @@ app.post(
         routingOk,
       });
     },
+    fetchCurrentConfigState: async () => await fetchCurrentConfigState({
+      runCmd,
+      openclawNode: OPENCLAW_NODE,
+      clawArgs,
+    }),
+    runConfigMutation: async (params) => await runConfigMutation(params, {
+      runCmd,
+      openclawNode: OPENCLAW_NODE,
+      clawArgs,
+    }),
+    listActiveWorkerSessions: async () => await listActiveWorkerSessions({
+      gatewayTarget: GATEWAY_TARGET,
+      gatewayToken: OPENCLAW_GATEWAY_TOKEN,
+    }),
     mutex: configApplyMutex,
     auditLogPath: CONFIG_AUDIT_LOG_PATH,
   }),
