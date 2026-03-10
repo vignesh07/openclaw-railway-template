@@ -81,6 +81,7 @@ What persists cleanly today:
 - **Node global tools (npm/pnpm):** this template configures defaults so global installs land under `/data`:
   - npm globals: `/data/npm` (binaries in `/data/npm/bin`)
   - pnpm globals: `/data/pnpm` (binaries) + `/data/pnpm-store` (store)
+  - this is ideal for helper CLIs like `@googleworkspace/cli` (`gws`)
 - **Python packages:** create a venv under `/data` (example below). The runtime image includes Python + venv support.
 
 What does *not* persist cleanly:
@@ -90,7 +91,7 @@ What does *not* persist cleanly:
 ### Optional bootstrap hook
 
 If `/data/workspace/bootstrap.sh` exists, the wrapper will run it on startup (best-effort) before starting the gateway.
-Use this to initialize persistent install prefixes or create a venv.
+Use this to initialize persistent install prefixes, install helper CLIs, or create a venv.
 
 Example `bootstrap.sh`:
 
@@ -103,6 +104,39 @@ python3 -m venv /data/venv || true
 
 # Example: ensure npm/pnpm dirs exist
 mkdir -p /data/npm /data/npm-cache /data/pnpm /data/pnpm-store
+```
+
+### Gmail / Calendar on Railway: use Google Workspace CLI (`gws`)
+
+If you want OpenClaw to work with Gmail / Calendar on Railway, prefer
+[`@googleworkspace/cli`](https://github.com/googleworkspace/cli) over older ad-hoc tools.
+It covers Gmail, Calendar, Drive, Sheets, and returns structured output that is easier for agents to use.
+
+Recommended pattern:
+
+1. Copy the example bootstrap script into the persistent workspace:
+
+```bash
+cp examples/bootstrap.google-workspace-cli.sh /data/workspace/bootstrap.sh
+chmod +x /data/workspace/bootstrap.sh
+```
+
+2. Redeploy or restart so the wrapper runs the bootstrap script.
+3. Open the setup console / shell and run:
+
+```bash
+gws auth setup
+```
+
+Notes:
+- `gws auth setup` is interactive OAuth, so you may need to complete it from a browser-backed shell/session.
+- Global npm installs are configured to persist under `/data/npm`, so `gws` survives redeploys.
+- If you want to pin a version, set `GWS_VERSION` before bootstrap runs.
+
+A ready-to-copy example lives at:
+
+```text
+examples/bootstrap.google-workspace-cli.sh
 ```
 
 ## Troubleshooting
