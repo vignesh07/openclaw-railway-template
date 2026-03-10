@@ -46,7 +46,7 @@ test('getGatewayStatusProbe reads gateway status json', async () => {
   const result = await getGatewayStatusProbe({
     runCmd: async (_cmd, args) => {
       assert.deepEqual(args, ['gateway', 'status', '--json']);
-      return { code: 0, output: JSON.stringify({ ok: true, targets: [{ health: { ok: true } }] }) };
+      return { code: 0, output: JSON.stringify({ rpc: { ok: true }, targets: [{ health: { ok: true } }] }) };
     },
   });
   assert.equal(result.ok, true);
@@ -63,7 +63,7 @@ test('getGatewayStatusProbe retries before failing', async () => {
       if (calls < 3) {
         return { code: 1, output: 'temporary failure' };
       }
-      return { code: 0, output: JSON.stringify({ ok: true, targets: [{ health: { ok: true } }] }) };
+      return { code: 0, output: JSON.stringify({ rpc: { ok: true }, targets: [{ health: { ok: true } }] }) };
     },
   });
   assert.equal(calls, 3);

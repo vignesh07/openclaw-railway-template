@@ -58,7 +58,7 @@ export async function getGatewayStatusProbe(options = {}) {
     if (result.code === 0) {
       const parsed = parseJsonOutput(result.output);
       return {
-        ok: Boolean(parsed?.ok),
+        ok: Boolean(parsed?.ok ?? parsed?.rpc?.ok),
         raw: parsed,
       };
     }
