@@ -33,7 +33,7 @@ async function buildTestServer(overrides = {}) {
   app.post('/setup/api/config/raw', createRawConfigWriteDisabledHandler());
   app.post('/setup/api/config/apply', createConfigApplyHandler({
     loadPolicy: async () => overrides.policy ?? policy,
-    fetchCurrentConfigState: async () => overrides.currentState ?? { payload: baseConfig, hash: 'base123' },
+    fetchCurrentConfigState: overrides.fetchCurrentConfigState ?? (async () => overrides.currentState ?? { payload: baseConfig, hash: 'base123' }),
     runConfigMutation: async (input) => {
       mutationCalls.push(input);
       if (overrides.runConfigMutation) return overrides.runConfigMutation(input, mutationCalls);
@@ -122,7 +122,22 @@ test('guarded apply rejects active workers without force', async () => {
 });
 
 test('guarded apply rolls back when write succeeds but post-apply health fails', async () => {
+  let fetchCount = 0;
   const app = await buildTestServer({
+    currentState: undefined,
+    fetchCurrentConfigState: async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return { payload: baseConfig, hash: 'base123' };
+      }
+      return { payload: baseConfig, hash: 'after456' };
+    },
+    runConfigMutation: async (_input, mutationCalls) => {
+      if (mutationCalls.length === 1) {
+        return { ok: true };
+      }
+      return { ok: true, hash: 'rolledback' };
+    },
     health: { ok: false, reason: 'routing failed' },
   });
   try {
@@ -135,6 +150,7 @@ test('guarded apply rolls back when write succeeds but post-apply health fails',
     assert.equal(response.body.ok, false);
     assert.equal(app.mutationCalls.length, 2);
     assert.equal(app.mutationCalls[1].change.type, 'full');
+    assert.equal(app.mutationCalls[1].change.baseHash, 'after456');
     assert.equal(app.events.some((event) => event.event === 'apply_rollback'), true);
   } finally {
     await app.close();

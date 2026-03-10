@@ -60,3 +60,23 @@ test('runConfigMutation surfaces retryAfterMs on rate limit errors', async () =>
     },
   );
 });
+
+test('fetchCurrentConfigState approves latest local pairing request and retries once', async () => {
+  const calls = [];
+  const state = await fetchCurrentConfigState({
+    runCmd: async (_cmd, args) => {
+      calls.push(args);
+      if (calls.length === 1) {
+        return { code: 1, output: 'Gateway call failed: Error: gateway closed (1008): pairing required' };
+      }
+      if (calls.length === 2) {
+        assert.deepEqual(args, ['devices', 'approve', '--latest', '--json']);
+        return { code: 0, output: JSON.stringify({ requestId: 'req1' }) };
+      }
+      return { code: 0, output: JSON.stringify({ hash: 'base456', config: { ok: true } }) };
+    },
+  });
+  assert.equal(state.hash, 'base456');
+  assert.deepEqual(calls[0], ['gateway', 'call', 'config.get', '--params', '{}', '--json']);
+  assert.deepEqual(calls[2], ['gateway', 'call', 'config.get', '--params', '{}', '--json']);
+});

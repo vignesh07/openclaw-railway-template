@@ -82,6 +82,27 @@ function buildMutationError(output) {
   return error;
 }
 
+function shouldApproveLocalPairing(result) {
+  return result.code !== 0 && /pairing required/i.test(String(result.output || ''));
+}
+
+async function runGatewayJsonCommand(args, options = {}) {
+  const runCmd = resolveRunCmd(options);
+  const invocation = resolveOpenClawInvocation(args, options);
+  let result = await runCmd(invocation.cmd, invocation.args);
+  if (shouldApproveLocalPairing(result)) {
+    const approveInvocation = resolveOpenClawInvocation(['devices', 'approve', '--latest', '--json'], options);
+    const approveResult = await runCmd(approveInvocation.cmd, approveInvocation.args);
+    if (approveResult.code === 0) {
+      result = await runCmd(invocation.cmd, invocation.args);
+    }
+  }
+  if (result.code !== 0) {
+    throw buildMutationError(result.output);
+  }
+  return normalizeGatewayResult(parseJsonOutput(result.output));
+}
+
 function buildGatewayCallArgs(method, params) {
   return ['gateway', 'call', method, '--params', JSON.stringify(params ?? {}), '--json'];
 }
@@ -105,13 +126,7 @@ export function buildMutationRequest(change) {
 }
 
 export async function fetchCurrentConfigState(options = {}) {
-  const runCmd = resolveRunCmd(options);
-  const invocation = resolveOpenClawInvocation(buildGatewayCallArgs('config.get', {}), options);
-  const result = await runCmd(invocation.cmd, invocation.args);
-  if (result.code !== 0) {
-    throw buildMutationError(result.output);
-  }
-  return normalizeGatewayResult(parseJsonOutput(result.output));
+  return await runGatewayJsonCommand(buildGatewayCallArgs('config.get', {}), options);
 }
 
 export async function runConfigMutation({ change, note, sessionKey, restartDelayMs }, options = {}) {
@@ -136,11 +151,5 @@ export async function runConfigMutation({ change, note, sessionKey, restartDelay
     note,
     restartDelayMs,
   });
-  const runCmd = resolveRunCmd(options);
-  const invocation = resolveOpenClawInvocation(buildGatewayCallArgs(request.method, request.params), options);
-  const result = await runCmd(invocation.cmd, invocation.args);
-  if (result.code !== 0) {
-    throw buildMutationError(result.output);
-  }
-  return normalizeGatewayResult(parseJsonOutput(result.output));
+  return await runGatewayJsonCommand(buildGatewayCallArgs(request.method, request.params), options);
 }

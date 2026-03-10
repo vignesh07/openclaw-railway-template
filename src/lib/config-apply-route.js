@@ -203,11 +203,12 @@ export function createConfigApplyHandler({
 
       if (!health?.ok) {
         try {
+          const rollbackState = await fetchCurrentConfigState();
           await runConfigMutation({
             change: {
               type: 'full',
               raw: JSON.stringify(currentPayload),
-              baseHash: mutationResult?.hash ?? baseHash,
+              baseHash: rollbackState?.hash ?? mutationResult?.hash ?? baseHash,
             },
             note: 'rollback',
             sessionKey,
