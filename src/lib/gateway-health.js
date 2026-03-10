@@ -20,6 +20,10 @@ function parseJsonOutput(output) {
   throw new Error(`Unable to parse JSON output: ${trimmed}`);
 }
 
+async function defaultSleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function evaluateControlPlaneHealth({ livenessOk, gatewayStatusOk, channelsReady, routingOk }) {
   return {
     ok: Boolean(livenessOk && gatewayStatusOk && channelsReady && routingOk),
@@ -45,15 +49,25 @@ export async function getGatewayStatusProbe(options = {}) {
     ? options.clawArgs(['gateway', 'status', '--json'])
     : ['gateway', 'status', '--json'];
   const cmd = options.openclawNode ?? 'openclaw';
-  const result = await runCmd(cmd, args);
-  if (result.code !== 0) {
-    throw new Error(String(result.output || 'gateway status failed').trim());
+  const attempts = Math.max(1, options.attempts ?? 1);
+  const delayMs = Math.max(0, options.delayMs ?? 0);
+  const sleepImpl = options.sleepImpl ?? defaultSleep;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await runCmd(cmd, args);
+    if (result.code === 0) {
+      const parsed = parseJsonOutput(result.output);
+      return {
+        ok: Boolean(parsed?.ok),
+        raw: parsed,
+      };
+    }
+    lastError = new Error(String(result.output || 'gateway status failed').trim());
+    if (attempt < attempts - 1) {
+      await sleepImpl(delayMs);
+    }
   }
-  const parsed = parseJsonOutput(result.output);
-  return {
-    ok: Boolean(parsed?.ok),
-    raw: parsed,
-  };
+  throw lastError;
 }
 
 export async function getChannelsProbe(options = {}) {
@@ -69,23 +83,38 @@ export async function getChannelsProbe(options = {}) {
     ? options.clawArgs(['channels', 'status', '--probe', '--json'])
     : ['channels', 'status', '--probe', '--json'];
   const cmd = options.openclawNode ?? 'openclaw';
-  const result = await runCmd(cmd, args);
-  if (result.code !== 0) {
-    throw new Error(String(result.output || 'channels status failed').trim());
-  }
-  const parsed = parseJsonOutput(result.output);
   const requiredChannels = Array.isArray(options.requiredChannels) ? options.requiredChannels : [];
-  const accountsByChannel = parsed?.channelAccounts && typeof parsed.channelAccounts === 'object'
-    ? parsed.channelAccounts
-    : {};
   const isHealthyAccount = (account) => account && account.enabled !== false && account.configured !== false && (account.connected === true || account.running === true || account.linked === true);
-  const ready = requiredChannels.length === 0
-    ? Object.values(accountsByChannel).flat().some((account) => isHealthyAccount(account))
-    : requiredChannels.every((channel) => Array.isArray(accountsByChannel[channel]) && accountsByChannel[channel].some((account) => isHealthyAccount(account)));
+  const attempts = Math.max(1, options.attempts ?? 1);
+  const delayMs = Math.max(0, options.delayMs ?? 0);
+  const sleepImpl = options.sleepImpl ?? defaultSleep;
+  let lastParsed = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await runCmd(cmd, args);
+    if (result.code !== 0) {
+      throw new Error(String(result.output || 'channels status failed').trim());
+    }
+    const parsed = parseJsonOutput(result.output);
+    lastParsed = parsed;
+    const accountsByChannel = parsed?.channelAccounts && typeof parsed.channelAccounts === 'object'
+      ? parsed.channelAccounts
+      : {};
+    const ready = requiredChannels.length === 0
+      ? Object.values(accountsByChannel).flat().some((account) => isHealthyAccount(account))
+      : requiredChannels.every((channel) => Array.isArray(accountsByChannel[channel]) && accountsByChannel[channel].some((account) => isHealthyAccount(account)));
+    if (ready || attempt === attempts - 1) {
+      return {
+        ok: true,
+        ready,
+        raw: parsed,
+      };
+    }
+    await sleepImpl(delayMs);
+  }
   return {
     ok: true,
-    ready,
-    raw: parsed,
+    ready: false,
+    raw: lastParsed,
   };
 }
 

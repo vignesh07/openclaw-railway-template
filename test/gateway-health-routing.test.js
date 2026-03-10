@@ -52,6 +52,24 @@ test('getGatewayStatusProbe reads gateway status json', async () => {
   assert.equal(result.ok, true);
 });
 
+test('getGatewayStatusProbe retries before failing', async () => {
+  let calls = 0;
+  const result = await getGatewayStatusProbe({
+    attempts: 3,
+    delayMs: 0,
+    sleepImpl: async () => {},
+    runCmd: async () => {
+      calls += 1;
+      if (calls < 3) {
+        return { code: 1, output: 'temporary failure' };
+      }
+      return { code: 0, output: JSON.stringify({ ok: true, targets: [{ health: { ok: true } }] }) };
+    },
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.ok, true);
+});
+
 test('getChannelsProbe reports ready when required channel is connected', async () => {
   const result = await getChannelsProbe({
     requiredChannels: ['telegram'],
@@ -60,6 +78,25 @@ test('getChannelsProbe reports ready when required channel is connected', async 
       return { code: 0, output: JSON.stringify({ channelAccounts: { telegram: [{ connected: true, configured: true, enabled: true }] } }) };
     },
   });
+  assert.equal(result.ready, true);
+});
+
+test('getChannelsProbe retries until channel becomes healthy', async () => {
+  let calls = 0;
+  const result = await getChannelsProbe({
+    attempts: 3,
+    delayMs: 0,
+    sleepImpl: async () => {},
+    requiredChannels: ['telegram'],
+    runCmd: async () => {
+      calls += 1;
+      if (calls < 3) {
+        return { code: 0, output: JSON.stringify({ channelAccounts: { telegram: [{ configured: true, enabled: true, running: false, connected: false }] } }) };
+      }
+      return { code: 0, output: JSON.stringify({ channelAccounts: { telegram: [{ configured: true, enabled: true, running: true, connected: true }] } }) };
+    },
+  });
+  assert.equal(calls, 3);
   assert.equal(result.ready, true);
 });
 
