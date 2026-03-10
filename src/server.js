@@ -29,6 +29,12 @@ for (const suffix of ["PUBLIC_PORT", "STATE_DIR", "WORKSPACE_DIR", "GATEWAY_TOKE
 //
 // OPENCLAW_PUBLIC_PORT is kept as an escape hatch for non-Railway deployments.
 const PORT = Number.parseInt(process.env.PORT ?? process.env.OPENCLAW_PUBLIC_PORT ?? "3000", 10);
+const MISSION_CONTROL_ENABLED = process.env.MISSION_CONTROL_ENABLED !== "false";
+const MISSION_CONTROL_PORT = Number.parseInt(process.env.MISSION_CONTROL_PORT ?? "3000", 10);
+const MISSION_CONTROL_HOST = process.env.MISSION_CONTROL_HOST ?? "127.0.0.1";
+const MISSION_CONTROL_BASE_PATH = process.env.MISSION_CONTROL_BASE_PATH?.trim() || "/mission-control";
+const MISSION_CONTROL_ROOT = process.env.MISSION_CONTROL_ROOT?.trim() || "/data/workspace/repos/mission-control-ui";
+const MISSION_CONTROL_TARGET = `http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}`;
 
 // State/workspace
 // OpenClaw defaults to ~/.openclaw.
@@ -136,6 +142,8 @@ function isConfigured() {
 
 let gatewayProc = null;
 let gatewayStarting = null;
+let missionControlProc = null;
+let missionControlStarting = null;
 
 // Debug breadcrumbs for common Railway failures (502 / "Application failed to respond").
 let lastGatewayError = null;
@@ -145,6 +153,21 @@ let lastDoctorAt = null;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForHttpReady(target, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 20_000;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(target, { method: "GET" });
+      if (res) return true;
+    } catch {
+      // not ready
+    }
+    await sleep(250);
+  }
+  return false;
 }
 
 async function waitForGatewayReady(opts = {}) {
@@ -269,6 +292,50 @@ async function restartGateway() {
     gatewayProc = null;
   }
   return ensureGatewayRunning();
+}
+
+async function startMissionControl() {
+  if (!MISSION_CONTROL_ENABLED) return;
+  if (missionControlProc) return;
+  const packageJson = path.join(MISSION_CONTROL_ROOT, "package.json");
+  if (!fs.existsSync(packageJson)) throw new Error(`Mission Control UI not found at ${MISSION_CONTROL_ROOT}`);
+
+  const nextBin = path.join(MISSION_CONTROL_ROOT, "node_modules", "next", "dist", "bin", "next");
+  missionControlProc = childProcess.spawn(process.execPath, [nextBin, "start", "--hostname", MISSION_CONTROL_HOST, "--port", String(MISSION_CONTROL_PORT)], {
+    cwd: MISSION_CONTROL_ROOT,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      WORKSPACE_ROOT: WORKSPACE_DIR,
+      NEXT_PUBLIC_BASE_PATH: MISSION_CONTROL_BASE_PATH,
+    },
+  });
+
+  missionControlProc.on("error", (err) => {
+    console.error(`[mission-control] spawn error: ${String(err)}`);
+    missionControlProc = null;
+  });
+
+  missionControlProc.on("exit", (code, signal) => {
+    console.error(`[mission-control] exited code=${code} signal=${signal}`);
+    missionControlProc = null;
+  });
+}
+
+async function ensureMissionControlRunning() {
+  if (!MISSION_CONTROL_ENABLED) return { ok: false, reason: "disabled" };
+  if (missionControlProc) return { ok: true };
+  if (!missionControlStarting) {
+    missionControlStarting = (async () => {
+      await startMissionControl();
+      const ready = await waitForHttpReady(`${MISSION_CONTROL_TARGET}${MISSION_CONTROL_BASE_PATH}`, { timeoutMs: 20_000 });
+      if (!ready) throw new Error("Mission Control UI did not become ready in time");
+    })().finally(() => {
+      missionControlStarting = null;
+    });
+  }
+  await missionControlStarting;
+  return { ok: true };
 }
 
 function requireSetupAuth(req, res, next) {
@@ -1316,12 +1383,30 @@ const proxy = httpProxy.createProxyServer({
   xfwd: true,
 });
 
+const missionControlProxy = httpProxy.createProxyServer({
+  target: MISSION_CONTROL_TARGET,
+  ws: false,
+  xfwd: true,
+});
+
 proxy.on("error", (err, _req, res) => {
   console.error("[proxy]", err);
   try {
     if (res && typeof res.writeHead === "function" && !res.headersSent) {
       res.writeHead(502, { "Content-Type": "text/plain" });
       res.end("Gateway unavailable\n");
+    }
+  } catch {
+    // ignore
+  }
+});
+
+missionControlProxy.on("error", (err, _req, res) => {
+  console.error("[mission-control-proxy]", err);
+  try {
+    if (res && typeof res.writeHead === "function" && !res.headersSent) {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end("Mission Control unavailable\n");
     }
   } catch {
     // ignore
@@ -1365,6 +1450,15 @@ proxy.on("proxyReqWs", (_proxyReq, req) => {
   attachGatewayAuthHeader(req);
 });
 
+app.use(MISSION_CONTROL_BASE_PATH, requireDashboardAuth, async (req, res) => {
+  try {
+    await ensureMissionControlRunning();
+  } catch (err) {
+    return res.status(503).type("text/plain").send(`Mission Control not ready.\n${String(err)}\n`);
+  }
+  return missionControlProxy.web(req, res, { target: MISSION_CONTROL_TARGET });
+});
+
 app.use(requireDashboardAuth, async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
@@ -1406,6 +1500,7 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
 
   console.log(`[wrapper] gateway token: ${OPENCLAW_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
   console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
+  console.log(`[wrapper] mission control target: ${MISSION_CONTROL_TARGET}${MISSION_CONTROL_BASE_PATH}`);
   if (!SETUP_PASSWORD) {
     console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
   }
@@ -1457,6 +1552,16 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
       console.error(`[wrapper] gateway failed to start at boot: ${String(err)}`);
     }
   }
+
+  if (MISSION_CONTROL_ENABLED) {
+    console.log("[wrapper] starting Mission Control UI...");
+    try {
+      await ensureMissionControlRunning();
+      console.log("[wrapper] Mission Control ready");
+    } catch (err) {
+      console.error(`[wrapper] Mission Control failed to start at boot: ${String(err)}`);
+    }
+  }
 });
 
 server.on("upgrade", async (req, socket, head) => {
@@ -1482,6 +1587,11 @@ process.on("SIGTERM", () => {
   // Best-effort shutdown
   try {
     if (gatewayProc) gatewayProc.kill("SIGTERM");
+  } catch {
+    // ignore
+  }
+  try {
+    if (missionControlProc) missionControlProc.kill("SIGTERM");
   } catch {
     // ignore
   }

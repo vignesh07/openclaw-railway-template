@@ -38,6 +38,13 @@ RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
 
+# Copy and build Mission Control UI for subpath mounting under /mission-control
+COPY repos/mission-control-ui /data/workspace/repos/mission-control-ui
+WORKDIR /data/workspace/repos/mission-control-ui
+RUN corepack enable && corepack prepare pnpm@10.6.3 --activate
+RUN NEXT_PUBLIC_BASE_PATH=/mission-control WORKSPACE_ROOT=/data/workspace pnpm install --frozen-lockfile
+RUN NEXT_PUBLIC_BASE_PATH=/mission-control WORKSPACE_ROOT=/data/workspace pnpm build
+WORKDIR /openclaw
 
 # Runtime image
 FROM node:22-bookworm
@@ -76,6 +83,7 @@ RUN npm install --omit=dev && npm cache clean --force
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
+COPY --from=openclaw-build /data/workspace/repos/mission-control-ui /data/workspace/repos/mission-control-ui
 
 # Provide an openclaw executable
 RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \

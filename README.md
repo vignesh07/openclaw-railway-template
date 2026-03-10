@@ -5,6 +5,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web wizard s
 ## What you get
 
 - **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
+- **Mission Control UI** for Threads review + source browsing (served at `/mission-control`)
 - A friendly **Setup Wizard** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
@@ -31,6 +32,9 @@ Required:
 Recommended:
 - `OPENCLAW_STATE_DIR=/data/.openclaw`
 - `OPENCLAW_WORKSPACE_DIR=/data/workspace`
+- `MISSION_CONTROL_ENABLED=true`
+- `MISSION_CONTROL_BASE_PATH=/mission-control`
+- `MISSION_CONTROL_ROOT=/data/workspace/repos/mission-control-ui`
 
 Optional:
 - `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
@@ -46,7 +50,11 @@ Then:
 - Visit `https://<your-app>.up.railway.app/setup`
   - Your browser will prompt for **HTTP Basic auth**. Use any username; the password is `SETUP_PASSWORD`.
 - Complete setup
-- Visit `https://<your-app>.up.railway.app/` and `/openclaw` (same Basic auth)
+- Visit:
+  - `https://<your-app>.up.railway.app/`
+  - `https://<your-app>.up.railway.app/openclaw`
+  - `https://<your-app>.up.railway.app/mission-control`
+  (same Basic auth)
 
 ## Support / community
 

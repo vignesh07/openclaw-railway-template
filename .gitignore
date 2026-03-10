@@ -13,3 +13,4 @@ npm-debug.log*
 
 # OS
 .DS_Store
+repos/mission-control-ui/.next/
