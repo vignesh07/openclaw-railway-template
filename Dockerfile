@@ -49,6 +49,12 @@ RUN apt-get update \
     tini \
     python3 \
     python3-venv \
+    wget \
+    gnupg2 \
+  && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb \
+  && dpkg -i /tmp/chrome.deb || true \
+  && apt-get install -y -f \
+  && rm /tmp/chrome.deb \
   && rm -rf /var/lib/apt/lists/*
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
