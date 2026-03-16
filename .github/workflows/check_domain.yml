@@ -26,5 +26,5 @@ jobs:
           done
 
           # 关键发送步骤：请确保这里的变量名与你在 Settings 里填的一致
-          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_botTOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$REPORT"
