@@ -2,9 +2,9 @@ name: 域名状态定时监测
 
 on:
   schedule:
-    # 每天早上 10:00 (UTC时间 2:00) 运行一次
+    # 每天早上 10:00 (北京时间) 运行一次
     - cron: '0 2 * * *'
-  workflow_dispatch: # 允许你手动点击按钮测试
+  workflow_dispatch: 
 
 jobs:
   check:
@@ -12,19 +12,19 @@ jobs:
     steps:
       - name: 检测域名并发送通知
         run: |
-          # 在这里修改你要检测的域名，空格隔开
           DOMAINS="hj5p.h2xv7hi1jh3.com w2qe6.i98sft5js9i.com"
           REPORT="🌐 域名状态报告：%0A"
 
           for domain in $DOMAINS; do
-            status=$(curl -Is https://$domain --connect-timeout 5 | head -n 1)
+            # 使用 -k 忽略证书错误，防止因证书过期导致检测中断
+            status=$(curl -Isk https://$domain --connect-timeout 5 | head -n 1)
             if [[ $status == *"200"* || $status == *"301"* || $status == *"302"* ]]; then
               REPORT="$REPORT ✅ $domain 正常%0A"
             else
-              REPORT="$REPORT ❌ $domain 异常 (状态: $status)%0A"
+              REPORT="$REPORT ❌ $domain 异常%0A"
             fi
           done
 
-          # 发送到 Telegram
+          # 发送通知
           curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$REPORT"
