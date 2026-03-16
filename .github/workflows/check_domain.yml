@@ -13,7 +13,7 @@ jobs:
       - name: 检测域名并发送通知
         run: |
           # 在这里修改你要检测的域名，空格隔开
-          DOMAINS="baidu.com google.com yoursite.com"
+          DOMAINS="hj5p.h2xv7hi1jh3.com"
           REPORT="🌐 域名状态报告：%0A"
 
           for domain in $DOMAINS; do
