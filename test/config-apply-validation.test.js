@@ -93,7 +93,7 @@ test("config apply edge: custom provider validation rejects bad input", () => {
 // (k) Console command arg validation uses alphanumeric pattern
 test("config apply edge: plugin/device name validation uses strict regex", () => {
   // plugins.enable handler validates plugin name
-  const pluginWindow = routeWindow('cmd === "openclaw.plugins.enable"', 300);
+  const pluginWindow = routeWindow('cmd === "openclaw.plugins.enable"', 500);
   assert.match(pluginWindow, /\[A-Za-z0-9_-\]\+/);
   assert.match(pluginWindow, /Invalid plugin name/);
 });

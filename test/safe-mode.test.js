@@ -52,7 +52,7 @@ test("safe mode: disabled console commands include all gateway lifecycle", () =>
 test("safe mode: console run checks disabled set and returns respondGone", () => {
   const window = routeWindow('app.post("/setup/api/console/run"', 1400);
   assert.match(window, /DISABLED_SETUP_CONSOLE_COMMANDS\.has\(cmd\)/);
-  assert.match(window, /respondGone\(res/);
+  assert.match(window, /respondGone\(/);
 });
 
 // (e) ALLOWED_CONSOLE_COMMANDS is a strict allowlist

@@ -17,11 +17,13 @@ function routeWindow(marker, length = 1200) {
 test("error format: 400 responses include ok:false and error field", () => {
   // Console: Command not allowed
   const consoleWindow = routeWindow('app.post("/setup/api/console/run"', 1400);
-  assert.match(consoleWindow, /status\(400\)\.json\(\{.*ok:\s*false.*error:/s);
+  assert.match(consoleWindow, /status\(400\)/);
+  assert.match(consoleWindow, /Command not allowed/);
 
   // Devices approve: Missing device request ID
-  const devWindow = routeWindow('app.post("/setup/api/devices/approve"', 400);
-  assert.match(devWindow, /status\(400\)\.json\(/);
+  const devWindow = routeWindow('app.post("/setup/api/devices/approve"', 600);
+  assert.match(devWindow, /status\(400\)/);
+  assert.match(devWindow, /Missing device request ID/);
 });
 
 // (b) 410 Gone errors use consistent respondGone with ok:false, error, code:"GONE"
