@@ -52,8 +52,11 @@ const WORKSPACE_DIR =
 // Protect /setup with a user-provided password.
 const SETUP_PASSWORD = process.env.SETUP_PASSWORD?.trim();
 
-// Gateway admin token (protects OpenClaw gateway + Control UI).
-// Must be stable across restarts. If not provided via env, persist it in the state dir.
+/**
+ * Resolve the gateway auth token. Reads from env, falls back to persisted file,
+ * or generates + persists a new random token.
+ * @returns {string} Hex-encoded gateway token.
+ */
 function resolveGatewayToken() {
   const envTok = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
   if (envTok) return envTok;
@@ -96,6 +99,7 @@ function clawArgs(args) {
   return [OPENCLAW_ENTRY, ...args];
 }
 
+/** @returns {string[]} Ordered list of config file paths to check. */
 function resolveConfigCandidates() {
   const explicit = process.env.OPENCLAW_CONFIG_PATH?.trim();
   if (explicit) return [explicit];
@@ -103,6 +107,7 @@ function resolveConfigCandidates() {
   return [path.join(STATE_DIR, "openclaw.json")];
 }
 
+/** @returns {string} Path to the first existing config file, or canonical default. */
 function configPath() {
   const candidates = resolveConfigCandidates();
   for (const candidate of candidates) {
@@ -116,6 +121,7 @@ function configPath() {
   return candidates[0] || path.join(STATE_DIR, "openclaw.json");
 }
 
+/** @returns {boolean} True if any config candidate exists on disk. */
 function isConfigured() {
   try {
     return resolveConfigCandidates().some((candidate) =>
@@ -320,6 +326,10 @@ app.use(express.json({ limit: "1mb" }));
 // Minimal health endpoint for Railway.
 app.get("/setup/healthz", (_req, res) => res.json({ ok: true }));
 
+/**
+ * TCP connect probe for the internal gateway.
+ * @returns {Promise<boolean>} True if TCP connect succeeds within 750ms.
+ */
 async function probeGateway() {
   // Don't assume HTTP — the gateway primarily speaks WebSocket.
   // A simple TCP connect check is enough for "is it up".
@@ -675,6 +685,11 @@ app.get("/setup/api/auth-groups", requireSetupAuth, (_req, res) => {
   res.json({ ok: true, authGroups: AUTH_GROUPS });
 });
 
+/**
+ * Validate custom OpenAI-compatible provider input.
+ * @param {Object} payload - Request body with customProvider* fields.
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
 function validateCustomProvider(payload) {
   const errors = [];
   const providerId = (payload.customProviderId || "").trim();
@@ -697,6 +712,12 @@ function validateCustomProvider(payload) {
   return { valid: errors.length === 0, errors };
 }
 
+/**
+ * Build CLI args for `openclaw onboard` from the setup form payload.
+ * @param {Object} payload - Request body from /setup/api/run.
+ * @returns {string[]} CLI arguments array.
+ * @throws {Error} If required auth secret is missing.
+ */
 function buildOnboardArgs(payload) {
   const args = [
     "onboard",
@@ -765,6 +786,13 @@ function buildOnboardArgs(payload) {
   return args;
 }
 
+/**
+ * Run a command as a child process with timeout.
+ * @param {string} cmd - Executable path.
+ * @param {string[]} args - Arguments.
+ * @param {Object} [opts] - Options (timeoutMs defaults to 120s).
+ * @returns {Promise<{code: number, output: string}>}
+ */
 function runCmd(cmd, args, opts = {}) {
   return new Promise((resolve) => {
     const timeoutMs = Number.isFinite(opts.timeoutMs)
@@ -1165,6 +1193,11 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
 
 // --- Debug console (Option A: allowlisted commands + config editor) ---
 
+/**
+ * Best-effort redaction of known secret patterns (API keys, bot tokens).
+ * @param {string|null|undefined} text - Input text to redact.
+ * @returns {string|null|undefined} Text with secrets replaced by [REDACTED].
+ */
 function redactSecrets(text) {
   if (!text) return text;
   // Very small best-effort redaction. (Config paths/values may still contain secrets.)
@@ -1179,6 +1212,11 @@ function redactSecrets(text) {
   );
 }
 
+/**
+ * Parse device request IDs from `openclaw devices list` output.
+ * @param {string} text - Raw CLI output.
+ * @returns {string[]} Deduplicated request IDs.
+ */
 function extractDeviceRequestIds(text) {
   const s = String(text || "");
   const out = new Set();
@@ -1220,6 +1258,11 @@ const DISABLED_SETUP_CONSOLE_COMMANDS = new Set([
   "gateway.start",
 ]);
 
+/**
+ * Respond with 410 Gone for disabled routes.
+ * @param {import('express').Response} res
+ * @param {string} error - Human-readable reason.
+ */
 function respondGone(res, error) {
   return res.status(410).json({
     ok: false,
@@ -1479,6 +1522,11 @@ function isUnderDir(p, root) {
   return abs === r || abs.startsWith(r + path.sep);
 }
 
+/**
+ * Check if a tar archive path looks safe (no traversal, no absolute paths).
+ * @param {string} p - Archive entry path.
+ * @returns {boolean}
+ */
 function looksSafeTarPath(p) {
   if (!p) return false;
   // tar paths always use / separators
