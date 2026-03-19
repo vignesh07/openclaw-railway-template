@@ -99,3 +99,17 @@ node --test: PASS — 143/143 tests (+24 from sprint baseline of 119)
 node -c src/server.js: PASS — LINT OK
 Protected files: none touched
 Security: CLEAN — no credentials, env var refs only
+
+## Convention Promotion Candidates
+
+- PROMOTE TO CLAUDE.md: "New control-plane capabilities belong in src/lib/ as pure injectable
+  modules (not server.js). Editing server.js triggers full-file Prettier reformat via auto-lint.sh."
+  Observed: 4 lib files created/modified this sprint with 0 server.js touches. 7/7 items passed.
+
+- PROMOTE TO CLAUDE.md: "All validation functions return { ok: boolean, errors: string[] }.
+  validateSemanticConfig and validateSpawnRequest follow this contract. New validators must too."
+  Observed: 2 functions + 3 test files relying on this shape.
+
+- PROMOTE TO CLAUDE.md: "Text-inspection tests anchoring on app.post() route declarations
+  are fragile to Prettier reformatting. Anchor on handler names or error message literals."
+  Observed: sprint 1 fixed 4 fragile tests. Sprint 2 avoided server.js entirely.
