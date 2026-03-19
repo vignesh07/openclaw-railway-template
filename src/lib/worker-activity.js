@@ -2,43 +2,51 @@
 // Uses a native OpenClaw interface seam instead of wrapper-local heuristics.
 // Must stay reusable across customers and deployments.
 
-const MAX_SPAWN_DEPTH = 1;
-const MAX_SPAWN_TIMEOUT_SEC = 300;
+// M3 delegation safety bounds. Keep these conservative — bounded leaf workers only.
+const MAX_WORKER_DEPTH = 1;
+const MAX_WORKER_TIMEOUT_SECONDS = 600;
 
 /**
- * Validate a proposed worker spawn request before execution.
- * Enforces M3 delegation safety constraints: depth limit, tool whitelist, timeout cap.
+ * Validate a spawn request before launching a subagent worker.
+ * Enforces M3 safety bounds: depth limit, tool whitelist, timeout bounds.
+ *
  * @param {object} request
- * @param {number} [request.depth] - nesting depth of the proposed spawn (0 = top-level)
- * @param {string[]} [request.tools] - tools the worker will be allowed to use
- * @param {number} [request.timeoutSec] - proposed session timeout in seconds
- * @param {string[]} [request.allowedTools] - override tool whitelist (default: read, write, web_fetch, web_search)
+ * @param {number} [request.depth] - Delegation depth. Must be 0 for top-level workers.
+ * @param {string[]} [request.tools] - Tools requested by the worker.
+ * @param {string[]} [request.toolAllowlist] - Allowed tools for this spawn context.
+ * @param {number} [request.timeoutSeconds] - Worker timeout. Must be > 0 and ≤ 600.
  * @returns {{ ok: boolean, errors: string[] }}
  */
 export function validateSpawnRequest({
   depth = 0,
   tools = [],
-  timeoutSec = MAX_SPAWN_TIMEOUT_SEC,
-  allowedTools,
+  toolAllowlist = [],
+  timeoutSeconds,
 } = {}) {
   const errors = [];
-  const whitelist = Array.isArray(allowedTools)
-    ? allowedTools
-    : ["read", "write", "web_fetch", "web_search"];
 
-  if (typeof depth !== "number" || depth > MAX_SPAWN_DEPTH) {
+  if (depth > MAX_WORKER_DEPTH) {
     errors.push(
-      `Spawn depth ${depth} exceeds maximum ${MAX_SPAWN_DEPTH}. M3 workers must be leaf nodes.`,
+      `Worker depth ${depth} exceeds maximum allowed depth ${MAX_WORKER_DEPTH}`,
     );
   }
-  if (typeof timeoutSec !== "number" || timeoutSec > MAX_SPAWN_TIMEOUT_SEC) {
+
+  if (timeoutSeconds === undefined || timeoutSeconds === null) {
+    errors.push("timeoutSeconds is required for spawn validation");
+  } else if (typeof timeoutSeconds !== "number" || timeoutSeconds <= 0) {
+    errors.push("timeoutSeconds must be a positive number");
+  } else if (timeoutSeconds > MAX_WORKER_TIMEOUT_SECONDS) {
     errors.push(
-      `Timeout ${timeoutSec}s exceeds maximum ${MAX_SPAWN_TIMEOUT_SEC}s.`,
+      `timeoutSeconds ${timeoutSeconds} exceeds maximum ${MAX_WORKER_TIMEOUT_SECONDS}`,
     );
   }
-  const unknownTools = tools.filter((tool) => !whitelist.includes(tool));
-  if (unknownTools.length > 0) {
-    errors.push(`Unknown tools not in whitelist: ${unknownTools.join(", ")}.`);
+
+  if (toolAllowlist.length > 0) {
+    for (const tool of tools) {
+      if (!toolAllowlist.includes(tool)) {
+        errors.push(`Tool not in allowlist: ${tool}`);
+      }
+    }
   }
 
   return { ok: errors.length === 0, errors };

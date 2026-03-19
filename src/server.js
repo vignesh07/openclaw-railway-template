@@ -8,13 +8,24 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
-import { createConfigApplyHandler, createRawConfigWriteDisabledHandler } from "./lib/config-apply-route.js";
+import {
+  createConfigApplyHandler,
+  createRawConfigWriteDisabledHandler,
+} from "./lib/config-apply-route.js";
 import { createApplyMutex } from "./lib/apply-mutex.js";
 import { appendAuditEvent } from "./lib/config-audit-log.js";
 import { buildRecoveryBackupPlan } from "./lib/break-glass-recovery.js";
-import { fetchCurrentConfigState, runConfigMutation } from "./lib/config-ops.js";
+import {
+  fetchCurrentConfigState,
+  runConfigMutation,
+} from "./lib/config-ops.js";
 import { loadControlPlanePolicy } from "./lib/control-plane-policy.js";
-import { evaluateControlPlaneHealth, getChannelsProbe, getGatewayStatusProbe, getLiveConfigReadback } from "./lib/gateway-health.js";
+import {
+  evaluateControlPlaneHealth,
+  getChannelsProbe,
+  getGatewayStatusProbe,
+  getLiveConfigReadback,
+} from "./lib/gateway-health.js";
 import { listActiveWorkerSessions } from "./lib/worker-activity.js";
 
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
@@ -58,7 +69,7 @@ const WORKSPACE_DIR =
   process.env.OPENCLAW_WORKSPACE_DIR?.trim() ||
   path.join(STATE_DIR, "workspace");
 
-const CONFIG_AUDIT_LOG_PATH = path.join(STATE_DIR, 'audit', 'config-ops.jsonl');
+const CONFIG_AUDIT_LOG_PATH = path.join(STATE_DIR, "audit", "config-ops.jsonl");
 const CONTROL_PLANE_POLICY_PATH = process.env.CONTROL_PLANE_POLICY_PATH?.trim();
 const configApplyMutex = createApplyMutex();
 
@@ -1122,7 +1133,9 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
   } catch (err) {
     console.error("[/setup/api/run] error:", err);
     if (!res.writableEnded && !res.headersSent) {
-      return res.status(500).json({ ok: false, output: `Internal error: ${String(err)}` });
+      return res
+        .status(500)
+        .json({ ok: false, output: `Internal error: ${String(err)}` });
     }
     return undefined;
   }
@@ -1288,9 +1301,17 @@ function evaluateRoutingSanityFromLiveConfig(liveConfig, policy) {
   const livePayload = liveConfig?.payload ?? liveConfig ?? {};
   const bindings = livePayload?.bindings || [];
   const agents = livePayload?.agents?.list || [];
-  const targetBinding = bindings.find((binding) => binding?.match?.channel === policy?.primaryChannel);
-  const targetAgent = agents.find((agent) => agent?.id === policy?.primaryAgentId);
-  return Boolean(targetBinding && targetBinding.agentId === policy?.primaryAgentId && targetAgent);
+  const targetBinding = bindings.find(
+    (binding) => binding?.match?.channel === policy?.primaryChannel,
+  );
+  const targetAgent = agents.find(
+    (agent) => agent?.id === policy?.primaryAgentId,
+  );
+  return Boolean(
+    targetBinding &&
+    targetBinding.agentId === policy?.primaryAgentId &&
+    targetAgent,
+  );
 }
 
 app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
@@ -1429,7 +1450,6 @@ app.get("/setup/api/config/raw", requireSetupAuth, async (_req, res) => {
   }
 });
 
-<<<<<<< HEAD
 app.post(
   "/setup/api/config/apply",
   requireSetupAuth,
@@ -1472,9 +1492,13 @@ app.post(
           runCmd,
           openclawNode: OPENCLAW_NODE,
           clawArgs,
-          requiredChannels: policy?.primaryChannel ? [policy.primaryChannel] : [],
+          requiredChannels: policy?.primaryChannel
+            ? [policy.primaryChannel]
+            : [],
         });
-        channelsReady = Boolean(channelsProbe?.ok ?? channelsProbe?.ready ?? channelsProbe);
+        channelsReady = Boolean(
+          channelsProbe?.ok ?? channelsProbe?.ready ?? channelsProbe,
+        );
       } catch {
         channelsReady = false;
       }
@@ -1497,26 +1521,33 @@ app.post(
         routingOk,
       });
     },
-    fetchCurrentConfigState: async () => await fetchCurrentConfigState({
-      runCmd,
-      openclawNode: OPENCLAW_NODE,
-      clawArgs,
-    }),
-    runConfigMutation: async (params) => await runConfigMutation(params, {
-      runCmd,
-      openclawNode: OPENCLAW_NODE,
-      clawArgs,
-    }),
-    listActiveWorkerSessions: async () => await listActiveWorkerSessions({
-      gatewayTarget: GATEWAY_TARGET,
-      gatewayToken: OPENCLAW_GATEWAY_TOKEN,
-    }),
+    fetchCurrentConfigState: async () =>
+      await fetchCurrentConfigState({
+        runCmd,
+        openclawNode: OPENCLAW_NODE,
+        clawArgs,
+      }),
+    runConfigMutation: async (params) =>
+      await runConfigMutation(params, {
+        runCmd,
+        openclawNode: OPENCLAW_NODE,
+        clawArgs,
+      }),
+    listActiveWorkerSessions: async () =>
+      await listActiveWorkerSessions({
+        gatewayTarget: GATEWAY_TARGET,
+        gatewayToken: OPENCLAW_GATEWAY_TOKEN,
+      }),
     mutex: configApplyMutex,
     auditLogPath: CONFIG_AUDIT_LOG_PATH,
   }),
 );
 
-app.post("/setup/api/config/raw", requireSetupAuth, createRawConfigWriteDisabledHandler());
+app.post(
+  "/setup/api/config/raw",
+  requireSetupAuth,
+  createRawConfigWriteDisabledHandler(),
+);
 
 app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
   const { channel, code } = req.body || {};
@@ -1573,23 +1604,29 @@ app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
 // Recovery-only break-glass path.
 // This path is separate from normal apply, prefers native backup+verify first,
 // and exists only for operator-led recovery when the native mutation path is unavailable.
-app.post("/setup/api/recovery/break-glass", requireSetupAuth, async (req, res) => {
-  const plan = buildRecoveryBackupPlan(configPath());
-  await appendAuditEvent(CONFIG_AUDIT_LOG_PATH, {
-    event: 'break_glass_requested',
-    mode: 'recovery-only',
-    force: req.body?.force === true,
-    notes: req.body?.note == null ? null : String(req.body.note),
-    actor: req.body?.sessionKey == null ? 'main' : String(req.body.sessionKey),
-    result: 'plan_returned',
-  });
-  return res.status(503).json({
-    ok: false,
-    recoveryOnly: true,
-    error: 'Break-glass recovery transport not implemented yet. Prefer native openclaw backup create + verify first.',
-    plan,
-  });
-});
+app.post(
+  "/setup/api/recovery/break-glass",
+  requireSetupAuth,
+  async (req, res) => {
+    const plan = buildRecoveryBackupPlan(configPath());
+    await appendAuditEvent(CONFIG_AUDIT_LOG_PATH, {
+      event: "break_glass_requested",
+      mode: "recovery-only",
+      force: req.body?.force === true,
+      notes: req.body?.note == null ? null : String(req.body.note),
+      actor:
+        req.body?.sessionKey == null ? "main" : String(req.body.sessionKey),
+      result: "plan_returned",
+    });
+    return res.status(503).json({
+      ok: false,
+      recoveryOnly: true,
+      error:
+        "Break-glass recovery transport not implemented yet. Prefer native openclaw backup create + verify first.",
+      plan,
+    });
+  },
+);
 
 app.get("/setup/export", requireSetupAuth, async (_req, res) => {
   fs.mkdirSync(STATE_DIR, { recursive: true });

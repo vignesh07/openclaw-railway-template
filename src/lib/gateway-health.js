@@ -29,16 +29,73 @@ export function evaluateControlPlaneHealth({
   gatewayStatusOk,
   channelsReady,
   routingOk,
+  connectosOk = true,
 }) {
   return {
-    ok: Boolean(livenessOk && gatewayStatusOk && channelsReady && routingOk),
+    ok: Boolean(
+      livenessOk &&
+      gatewayStatusOk &&
+      channelsReady &&
+      routingOk &&
+      connectosOk,
+    ),
     phases: {
       livenessOk,
       gatewayStatusOk,
       channelsReady,
       routingOk,
+      connectosOk,
     },
   };
+}
+
+export async function getConnectOSHealthProbe(options = {}) {
+  // transport: HTTP GET to ConnectOS /health endpoint
+  // success criteria: 2xx response with { ok: true }
+  // graceful degradation: non-2xx or network error → { ok: false, degraded: true }
+  const connectosUrl =
+    options.connectosUrl ??
+    process.env.CONNECTOS_URL ??
+    "http://localhost:4000";
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? 5000;
+
+  let controller;
+  let timeoutId;
+  let signal;
+  if (typeof AbortController !== "undefined") {
+    controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    signal = controller.signal;
+  }
+
+  try {
+    const response = await fetchImpl(`${connectosUrl}/health`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    });
+    if (timeoutId) clearTimeout(timeoutId);
+    let raw = {};
+    try {
+      raw = await response.json();
+    } catch {
+      // non-JSON body — still check HTTP status
+    }
+    if (response.ok) {
+      return { ok: true, status: response.status, raw };
+    }
+    return { ok: false, degraded: true, status: response.status, raw };
+  } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
+    const isTimeout = err?.name === "AbortError";
+    return {
+      ok: false,
+      degraded: true,
+      status: isTimeout ? "timeout" : "unreachable",
+      raw: { error: String(err?.message || err) },
+    };
+  }
 }
 
 export async function getGatewayStatusProbe(options = {}) {
@@ -157,54 +214,4 @@ export async function getLiveConfigReadback(options = {}) {
   // command: `openclaw gateway call config.get --params "{}"`
   // auth context: same local gateway token/context already controlled by the wrapper process
   return await fetchCurrentConfigState(options);
-}
-
-/**
- * Probe the ConnectOS health endpoint.
- * Gracefully degrades: if ConnectOS is down, returns ok:false with reason.
- * The morning briefing pipeline must tolerate ConnectOS unavailability.
- * @param {object} [options]
- * @param {string} [options.connectosTarget] - base URL for ConnectOS (e.g. 'http://connectos:3000')
- * @param {Function} [options.fetchImpl] - injectable fetch for testing
- * @param {number} [options.timeoutMs] - request timeout in ms (default 5000)
- * @returns {Promise<{ ok: boolean, status: number|null, reason: string|null }>}
- */
-export async function getConnectOsHealthProbe(options = {}) {
-  const connectosTarget =
-    options.connectosTarget ??
-    process.env.CONNECTOS_URL ??
-    "http://connectos:3000";
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const timeoutMs = options.timeoutMs ?? 5000;
-  const url = `${connectosTarget}/health`;
-  try {
-    const controller =
-      typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = controller
-      ? setTimeout(() => controller.abort(), timeoutMs)
-      : null;
-    let response;
-    try {
-      response = await fetchImpl(
-        url,
-        controller ? { signal: controller.signal } : {},
-      );
-    } finally {
-      if (timer !== null) clearTimeout(timer);
-    }
-    if (response.ok) {
-      return { ok: true, status: response.status, reason: null };
-    }
-    return {
-      ok: false,
-      status: response.status,
-      reason: `ConnectOS /health returned ${response.status}`,
-    };
-  } catch (err) {
-    const reason =
-      err?.name === "AbortError"
-        ? `ConnectOS /health timed out after ${timeoutMs}ms`
-        : `ConnectOS /health unreachable: ${String(err?.message ?? err)}`;
-    return { ok: false, status: null, reason };
-  }
 }

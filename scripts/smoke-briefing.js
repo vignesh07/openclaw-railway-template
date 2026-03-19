@@ -1,106 +1,95 @@
 #!/usr/bin/env node
-// Smoke test for morning briefing workflow integration.
-// Hits staging control-plane endpoints to verify ConnectOS health probe,
-// tool registry, and worker result contract are wired correctly.
+// Staging smoke test for the morning briefing control-plane surface.
+// Verifies: ConnectOS health endpoint reachable, tool registry valid,
+// and spawn validation accepts the expected briefing worker config.
 //
-// Usage:
-//   CONTROL_PLANE_URL=http://localhost:8080 node scripts/smoke-briefing.js
-//   CONNECTOS_URL=http://connectos:3000 node scripts/smoke-briefing.js
+// Usage: node scripts/smoke-briefing.js [--connectos-url <url>]
 //
-// Exit codes: 0 = all checks pass, 1 = one or more checks failed.
+// Exit 0 = all checks passed
+// Exit 1 = one or more checks failed
 
-import { getConnectOsHealthProbe } from "../src/lib/gateway-health.js";
-import { getKnownToolNames } from "../src/lib/tool-registry.js";
 import { validateSpawnRequest } from "../src/lib/worker-activity.js";
-import {
-  createWorkerResult,
-  WorkerResultStatus,
-  isComplete,
-} from "../src/lib/worker-result.js";
+import { getConnectOSHealthProbe } from "../src/lib/gateway-health.js";
+import { isKnownToolName } from "../src/lib/tool-registry.js";
 
-const CONNECTOS_URL = process.env.CONNECTOS_URL ?? "http://connectos:3000";
-const REQUIRED_SHOPIFY_TOOLS = [
-  "shopify_orders",
-  "shopify_products",
-  "shopify_revenue",
-];
+const args = process.argv.slice(2);
+const connectosUrlIdx = args.indexOf("--connectos-url");
+const connectosUrl =
+  connectosUrlIdx >= 0
+    ? args[connectosUrlIdx + 1]
+    : (process.env.CONNECTOS_URL ?? "http://localhost:4000");
 
-let passed = 0;
-let failed = 0;
+let failures = 0;
 
-function check(name, ok, detail = "") {
-  if (ok) {
-    console.log(`✓ ${name}`);
-    passed += 1;
+function check(name, passed, detail = "") {
+  if (passed) {
+    console.log(`  ok  ${name}`);
   } else {
-    console.error(`✗ ${name}${detail ? ": " + detail : ""}`);
-    failed += 1;
+    console.error(`  FAIL ${name}${detail ? ": " + detail : ""}`);
+    failures += 1;
   }
 }
 
-// Check 1: ConnectOS health probe
-console.log(`\nConnectOS health probe → ${CONNECTOS_URL}/health`);
-const healthResult = await getConnectOsHealthProbe({
-  connectosTarget: CONNECTOS_URL,
-});
-if (healthResult.ok) {
-  check("ConnectOS /health reachable", true);
-} else {
-  check(
-    "ConnectOS /health reachable (SOFT FAIL — briefing will degrade gracefully)",
-    false,
-    healthResult.reason,
-  );
+console.log(`\n=== smoke-briefing ===`);
+console.log(`connectosUrl: ${connectosUrl}\n`);
+
+// 1. Tool registry — ConnectOS tool names
+console.log("--- Tool Registry ---");
+const briefingTools = [
+  "connectos",
+  "shopify_orders",
+  "shopify_revenue",
+  "shopify_products",
+  "briefing_bundle",
+];
+for (const name of briefingTools) {
+  check(`tool registered: ${name}`, isKnownToolName(name));
 }
 
-// Check 2: Shopify tools registered
-const knownTools = getKnownToolNames();
-for (const tool of REQUIRED_SHOPIFY_TOOLS) {
-  check(`Tool registry contains ${tool}`, knownTools.includes(tool));
-}
-
-// Check 3: Spawn validation allows Shopify tools with override
+// 2. Spawn validation — briefing worker config
+console.log("\n--- Spawn Validation ---");
 const spawnResult = validateSpawnRequest({
-  depth: 1,
-  tools: REQUIRED_SHOPIFY_TOOLS,
-  timeoutSec: 120,
-  allowedTools: REQUIRED_SHOPIFY_TOOLS,
+  depth: 0,
+  tools: ["connectos", "shopify_orders", "briefing_bundle"],
+  toolAllowlist: briefingTools,
+  timeoutSeconds: 300,
 });
 check(
-  "Spawn validation: Shopify tools allowed with briefing whitelist",
+  "briefing spawn config valid",
   spawnResult.ok,
-  spawnResult.errors.join("; "),
+  spawnResult.errors.join(", "),
 );
 
-// Check 4: Worker result contract round-trip
-const envelope = createWorkerResult({
-  status: WorkerResultStatus.COMPLETE,
-  payload: { smoke: true },
-  meta: {
-    durationMs: 0,
-    sessionKey: "smoke:briefing",
-    toolsUsed: ["shopify_orders"],
-  },
+// depth guard
+const depthResult = validateSpawnRequest({
+  depth: 2,
+  tools: ["read"],
+  toolAllowlist: ["read"],
+  timeoutSeconds: 60,
 });
-check(
-  "Worker result envelope: COMPLETE status detectable",
-  isComplete(envelope),
-);
-check(
-  "Worker result envelope: payload preserved",
-  envelope.payload?.smoke === true,
-);
+check("depth > 1 rejected", !depthResult.ok);
 
-// Summary
-console.log(`\nSmoke briefing: ${passed} passed, ${failed} failed`);
-if (failed > 0) {
-  console.error(
-    "\nNote: ConnectOS health failures are expected in offline environments.",
-  );
-  console.error(
-    "All structural checks (tool registry, spawn validation, result contract) must pass.",
+// 3. ConnectOS health probe (optional — may be unavailable in CI)
+console.log("\n--- ConnectOS Health ---");
+try {
+  const health = await getConnectOSHealthProbe({
+    connectosUrl,
+    timeoutMs: 3000,
+  });
+  if (health.ok) {
+    check("ConnectOS /health reachable", true);
+  } else {
+    console.log(
+      `  INFO ConnectOS unreachable (degraded=${health.degraded}, status=${health.status}) — not a hard failure`,
+    );
+  }
+} catch (err) {
+  console.log(
+    `  INFO ConnectOS probe threw: ${err.message} — not a hard failure`,
   );
 }
 
-const structuralFailed = failed - (healthResult.ok ? 0 : 1);
-process.exit(structuralFailed > 0 ? 1 : 0);
+console.log(
+  `\n=== result: ${failures === 0 ? "PASS" : `FAIL (${failures} checks failed)`} ===\n`,
+);
+process.exit(failures > 0 ? 1 : 0);

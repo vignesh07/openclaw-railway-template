@@ -1,106 +1,105 @@
-// Tests for ConnectOS tool integration in the wrapper's control plane.
-// Validates tool registration, spawn validation with Shopify tools,
-// health probe auth behavior, and timeout fallback.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  getKnownToolNames,
   isKnownToolName,
+  getKnownToolNames,
 } from "../src/lib/tool-registry.js";
-import { validateSpawnRequest } from "../src/lib/worker-activity.js";
-import { getConnectOsHealthProbe } from "../src/lib/gateway-health.js";
 import {
-  createWorkerResult,
-  WorkerResultStatus,
-} from "../src/lib/worker-result.js";
+  getConnectOSHealthProbe,
+  evaluateControlPlaneHealth,
+} from "../src/lib/gateway-health.js";
 
-// -- Tool registration --
-
-test("connectos tool: all shopify tools are in registry", () => {
-  const names = getKnownToolNames();
-  assert.ok(names.includes("shopify_orders"), "shopify_orders missing");
-  assert.ok(names.includes("shopify_products"), "shopify_products missing");
-  assert.ok(names.includes("shopify_revenue"), "shopify_revenue missing");
-});
-
-test("connectos tool: isKnownToolName validates each shopify tool", () => {
+// Tool registry — ConnectOS tool surface
+test("ConnectOS tool names are registered in the tool registry", () => {
+  assert.equal(isKnownToolName("connectos"), true);
   assert.equal(isKnownToolName("shopify_orders"), true);
-  assert.equal(isKnownToolName("shopify_products"), true);
   assert.equal(isKnownToolName("shopify_revenue"), true);
+  assert.equal(isKnownToolName("shopify_products"), true);
+  assert.equal(isKnownToolName("briefing_bundle"), true);
 });
 
-// -- Spawn validation with ConnectOS tools --
-
-test("connectos tool: spawn request using shopify tools passes whitelist check", () => {
-  const result = validateSpawnRequest({
-    depth: 1,
-    tools: ["shopify_orders", "shopify_revenue"],
-    timeoutSec: 120,
-    allowedTools: ["shopify_orders", "shopify_products", "shopify_revenue"],
-  });
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.errors, []);
+test("adjacent incorrect tool names are still rejected", () => {
+  assert.equal(isKnownToolName("shopify"), false);
+  assert.equal(isKnownToolName("ShopifyOrders"), false);
+  assert.equal(isKnownToolName("connect_os"), false);
+  assert.equal(isKnownToolName("ConnectOS"), false);
 });
 
-test("connectos tool: spawn request without allowedTools override rejects shopify tools", () => {
-  // Without override, default whitelist is the 4 base tools — shopify tools require explicit allow
-  const result = validateSpawnRequest({
-    depth: 0,
-    tools: ["shopify_orders"],
-    timeoutSec: 60,
-  });
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((e) => e.includes("shopify_orders")));
-});
-
-// -- Health probe: timeout handling --
-
-test("connectos tool: health probe uses custom target URL from env-style option", async () => {
-  let seen;
-  await getConnectOsHealthProbe({
-    connectosTarget: "http://staging.connectos:8080",
-    fetchImpl: async (url) => {
-      seen = url;
-      return { ok: true, status: 200 };
-    },
-  });
-  assert.equal(seen, "http://staging.connectos:8080/health");
-});
-
-test("connectos tool: health probe ok:false on non-2xx response", async () => {
-  const result = await getConnectOsHealthProbe({
-    connectosTarget: "http://connectos",
-    fetchImpl: async () => ({ ok: false, status: 500 }),
-  });
-  assert.equal(result.ok, false);
-  assert.ok(result.reason !== null);
-});
-
-// -- Worker result contract for ConnectOS tool call --
-
-test("connectos tool: successful result envelope has COMPLETE status", () => {
-  const result = createWorkerResult({
-    status: WorkerResultStatus.COMPLETE,
-    payload: { orders: 42, revenue_chf: 12500 },
-    meta: {
-      durationMs: 1200,
-      sessionKey: "shopify:briefing:1",
-      toolsUsed: ["shopify_orders", "shopify_revenue"],
-    },
-  });
-  assert.equal(result.status, "complete");
-  assert.equal(result.payload.orders, 42);
-  assert.deepEqual(result.meta.toolsUsed, [
+test("all ConnectOS tools appear in getKnownToolNames array", () => {
+  const names = getKnownToolNames();
+  for (const name of [
+    "connectos",
     "shopify_orders",
     "shopify_revenue",
-  ]);
+    "shopify_products",
+    "briefing_bundle",
+  ]) {
+    assert.ok(names.includes(name), `Expected ${name} in registry`);
+  }
 });
 
-test("connectos tool: timed out result is detectable", () => {
-  const result = createWorkerResult({
-    status: WorkerResultStatus.TIMED_OUT,
-    payload: null,
-    meta: { durationMs: 300000, sessionKey: "shopify:briefing:1" },
+// ConnectOS health probe
+test("getConnectOSHealthProbe reports ok when ConnectOS returns 200", async () => {
+  const result = await getConnectOSHealthProbe({
+    connectosUrl: "http://connectos.internal",
+    fetchImpl: async (url) => {
+      assert.equal(url, "http://connectos.internal/health");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, version: "1.0.0" }),
+      };
+    },
   });
-  assert.equal(result.status, "timed_out");
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 200);
+});
+
+test("getConnectOSHealthProbe degrades gracefully when ConnectOS returns 503", async () => {
+  const result = await getConnectOSHealthProbe({
+    connectosUrl: "http://connectos.internal",
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ ok: false, error: "Service Unavailable" }),
+    }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.degraded, true);
+  assert.equal(result.status, 503);
+});
+
+test("getConnectOSHealthProbe degrades gracefully on network error", async () => {
+  const result = await getConnectOSHealthProbe({
+    connectosUrl: "http://connectos.internal",
+    fetchImpl: async () => {
+      throw new Error("ECONNREFUSED");
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.degraded, true);
+  assert.equal(result.status, "unreachable");
+});
+
+test("control-plane health gate fails when connectosOk=false", () => {
+  const result = evaluateControlPlaneHealth({
+    livenessOk: true,
+    gatewayStatusOk: true,
+    channelsReady: true,
+    routingOk: true,
+    connectosOk: false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.phases.connectosOk, false);
+});
+
+test("control-plane health gate passes when connectosOk omitted (backward compat)", () => {
+  const result = evaluateControlPlaneHealth({
+    livenessOk: true,
+    gatewayStatusOk: true,
+    channelsReady: true,
+    routingOk: true,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.phases.connectosOk, true);
 });

@@ -5,49 +5,55 @@
 
 export const WorkerResultStatus = Object.freeze({
   COMPLETE: "complete",
-  FAILED: "failed",
   TIMED_OUT: "timed_out",
+  FAILED: "failed",
+  CANCELLED: "cancelled",
 });
 
 /**
  * Create a typed worker result envelope.
- * @param {object} params
- * @param {string} params.status - WorkerResultStatus value
- * @param {unknown} [params.payload] - result payload (structured output from worker)
- * @param {object} [params.meta] - timing and session metadata
- * @param {number} [params.meta.durationMs] - wall-clock duration of the worker session
- * @param {string} [params.meta.sessionKey] - session key of the worker that produced this result
- * @param {string[]} [params.meta.toolsUsed] - tools the worker invoked
+ * @param {string} status - One of WorkerResultStatus values.
+ * @param {*} payload - The result payload (tool output, briefing bundle, etc.)
+ * @param {object} [meta] - Optional metadata: durationMs, workerSessionKey, toolsUsed.
+ * @returns {{ status, payload, meta, createdAt }}
  */
-export function createWorkerResult({ status, payload = null, meta = {} }) {
-  const validStatuses = Object.values(WorkerResultStatus);
-  if (!validStatuses.includes(status)) {
-    throw new Error(
-      `Invalid WorkerResultStatus: ${status}. Expected one of: ${validStatuses.join(", ")}`,
-    );
+export function createWorkerResult(status, payload = null, meta = {}) {
+  if (!Object.values(WorkerResultStatus).includes(status)) {
+    throw new Error(`Invalid worker result status: ${status}`);
   }
-  return Object.freeze({
+  return {
     status,
     payload,
-    meta: Object.freeze({
-      durationMs: typeof meta.durationMs === "number" ? meta.durationMs : null,
-      sessionKey: typeof meta.sessionKey === "string" ? meta.sessionKey : null,
+    meta: {
+      durationMs: meta.durationMs ?? null,
+      workerSessionKey: meta.workerSessionKey ?? null,
       toolsUsed: Array.isArray(meta.toolsUsed) ? [...meta.toolsUsed] : [],
-    }),
-  });
+      ...meta,
+    },
+    createdAt: meta.createdAt ?? new Date().toISOString(),
+  };
 }
 
-/** Returns true if the worker result indicates a timeout. */
+/**
+ * Returns true if the result indicates the worker timed out.
+ * @param {{ status: string }} result
+ */
 export function isTimedOut(result) {
   return result?.status === WorkerResultStatus.TIMED_OUT;
 }
 
-/** Returns true if the worker result indicates successful completion. */
+/**
+ * Returns true if the result is a successful completion (not error/timeout).
+ * @param {{ status: string }} result
+ */
 export function isComplete(result) {
   return result?.status === WorkerResultStatus.COMPLETE;
 }
 
-/** Returns true if the worker result indicates a failure. */
+/**
+ * Returns true if the result indicates the worker failed.
+ * @param {{ status: string }} result
+ */
 export function isFailed(result) {
   return result?.status === WorkerResultStatus.FAILED;
 }

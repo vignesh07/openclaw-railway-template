@@ -1,98 +1,98 @@
-// Tests for M3 worker spawn safety validation.
-// Validates depth limit, timeout cap, and tool whitelist enforcement.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateSpawnRequest } from "../src/lib/worker-activity.js";
 
-test("worker spawn: clean request with safe defaults passes", () => {
+test("validateSpawnRequest accepts valid M3 briefing worker config", () => {
   const result = validateSpawnRequest({
     depth: 0,
-    tools: ["read"],
-    timeoutSec: 60,
+    tools: ["connectos", "briefing_bundle"],
+    toolAllowlist: [
+      "connectos",
+      "shopify_orders",
+      "shopify_revenue",
+      "briefing_bundle",
+    ],
+    timeoutSeconds: 300,
   });
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
 });
 
-test("worker spawn: depth 1 is allowed (leaf node boundary)", () => {
-  const result = validateSpawnRequest({
-    depth: 1,
-    tools: ["read"],
-    timeoutSec: 60,
-  });
-  assert.equal(result.ok, true);
-});
-
-test("worker spawn: depth > 1 is rejected", () => {
+test("validateSpawnRequest rejects depth > 1 (M3 bounded leaf workers only)", () => {
   const result = validateSpawnRequest({
     depth: 2,
     tools: ["read"],
-    timeoutSec: 60,
+    toolAllowlist: ["read"],
+    timeoutSeconds: 60,
   });
   assert.equal(result.ok, false);
-  assert.equal(result.errors.length, 1);
-  assert.ok(result.errors[0].includes("depth"));
+  assert.ok(result.errors.some((e) => e.includes("depth 2 exceeds maximum")));
 });
 
-test("worker spawn: timeout at 300s is allowed", () => {
+test("validateSpawnRequest rejects missing timeoutSeconds", () => {
   const result = validateSpawnRequest({
     depth: 0,
     tools: ["read"],
-    timeoutSec: 300,
+    toolAllowlist: ["read"],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("timeoutSeconds is required")),
+  );
+});
+
+test("validateSpawnRequest rejects zero timeout", () => {
+  const result = validateSpawnRequest({
+    depth: 0,
+    tools: ["read"],
+    toolAllowlist: ["read"],
+    timeoutSeconds: 0,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("positive number")));
+});
+
+test("validateSpawnRequest rejects timeout exceeding 600s", () => {
+  const result = validateSpawnRequest({
+    depth: 0,
+    tools: ["read"],
+    toolAllowlist: ["read"],
+    timeoutSeconds: 601,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("exceeds maximum 600")));
+});
+
+test("validateSpawnRequest rejects tool not in allowlist", () => {
+  const result = validateSpawnRequest({
+    depth: 0,
+    tools: ["read", "shell_exec"],
+    toolAllowlist: ["read", "write"],
+    timeoutSeconds: 60,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("shell_exec")));
+});
+
+test("validateSpawnRequest allows any tools when toolAllowlist is empty", () => {
+  // empty allowlist = no tool restriction (caller opted out of tool gating)
+  const result = validateSpawnRequest({
+    depth: 0,
+    tools: ["read", "shell_exec", "anything"],
+    toolAllowlist: [],
+    timeoutSeconds: 60,
   });
   assert.equal(result.ok, true);
 });
 
-test("worker spawn: timeout > 300s is rejected", () => {
-  const result = validateSpawnRequest({
-    depth: 0,
-    tools: ["read"],
-    timeoutSec: 301,
-  });
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((e) => e.includes("301")));
-});
-
-test("worker spawn: known tools (read, write, web_fetch, web_search) are allowed", () => {
-  const result = validateSpawnRequest({
-    depth: 0,
-    tools: ["read", "write", "web_fetch", "web_search"],
-    timeoutSec: 60,
-  });
-  assert.equal(result.ok, true);
-});
-
-test("worker spawn: unknown tool is rejected", () => {
-  const result = validateSpawnRequest({
-    depth: 0,
-    tools: ["bash_exec"],
-    timeoutSec: 60,
-  });
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((e) => e.includes("bash_exec")));
-});
-
-test("worker spawn: multiple violations accumulate all errors", () => {
+test("validateSpawnRequest collects multiple errors", () => {
   const result = validateSpawnRequest({
     depth: 3,
-    tools: ["bash_exec", "fs_write"],
-    timeoutSec: 600,
+    tools: ["disallowed_tool"],
+    toolAllowlist: ["read"],
+    timeoutSeconds: 700,
   });
   assert.equal(result.ok, false);
+  // should flag depth, timeout, and disallowed tool
   assert.ok(result.errors.length >= 3);
-});
-
-test("worker spawn: allowedTools override enables custom whitelists", () => {
-  const result = validateSpawnRequest({
-    depth: 0,
-    tools: ["shopify_orders"],
-    timeoutSec: 60,
-    allowedTools: ["shopify_orders", "shopify_products"],
-  });
-  assert.equal(result.ok, true);
-});
-
-test("worker spawn: empty tools list always passes whitelist check", () => {
-  const result = validateSpawnRequest({ depth: 0, tools: [], timeoutSec: 60 });
-  assert.equal(result.ok, true);
 });

@@ -22,19 +22,23 @@ test("safe mode: respondGone returns 410 with structured error", () => {
 });
 
 // (b) All destructive routes use respondGone or equivalent disabled handler
+// Note: anchors on handler strings, not route declarations, to survive Prettier reformatting.
 test("safe mode: all destructive routes return respondGone", () => {
-  const destructiveRoutes = [
-    'app.post("/setup/api/config/raw"',
-    'app.post("/setup/import"',
-    'app.post("/setup/api/reset"',
-  ];
-  for (const marker of destructiveRoutes) {
-    const window = routeWindow(marker, 300);
-    assert.ok(
-      /respondGone\(/.test(window) || /create\w+DisabledHandler/.test(window),
-      `${marker} should use respondGone or a disabled handler`
-    );
-  }
+  // config/raw POST uses createRawConfigWriteDisabledHandler — anchor on the call itself
+  const configRawWindow = routeWindow(
+    "createRawConfigWriteDisabledHandler()",
+    100,
+  );
+  assert.ok(
+    /create\w+DisabledHandler/.test(configRawWindow),
+    "config/raw should use createRawConfigWriteDisabledHandler",
+  );
+
+  // import and reset use respondGone inline — route declarations fit on one line
+  const importWindow = routeWindow('app.post("/setup/import"', 300);
+  const resetWindow = routeWindow('app.post("/setup/api/reset"', 300);
+  assert.match(importWindow, /respondGone\(/);
+  assert.match(resetWindow, /respondGone\(/);
 });
 
 // (c) DISABLED_SETUP_CONSOLE_COMMANDS blocks gateway lifecycle
@@ -70,8 +74,9 @@ test("safe mode: console commands use strict Set-based allowlist", () => {
 test("safe mode: disabled routes include descriptive messages", () => {
   // Raw config writes message may be inline or in a factory function
   assert.ok(
-    /Raw config writes disabled/.test(src) || /createRawConfigWriteDisabledHandler/.test(src),
-    "should have raw config disabled message or handler"
+    /Raw config writes disabled/.test(src) ||
+      /createRawConfigWriteDisabledHandler/.test(src),
+    "should have raw config disabled message or handler",
   );
   assert.match(src, /Backup import disabled during Milestone 1/);
   assert.match(src, /Reset disabled during Milestone 1/);
