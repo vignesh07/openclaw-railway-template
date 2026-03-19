@@ -72,4 +72,5 @@ Security scan: CLEAN — no API keys, tokens, or credentials introduced.
 
 ## PR
 
-[to be filled after git push]
+https://github.com/vignesh07/clawdbot-railway-template/pull/188
+(Updated with sprint 2 body — same branch as sprint 1)
