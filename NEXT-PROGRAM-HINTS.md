@@ -73,3 +73,36 @@ Generated: 2026-03-19T22:30:00Z after factory sprint 2 on factory/mar19
   Items 4-6 from the PROGRAM.md (ops/ configs, briefing cron, M3 delegation) were NOT
   done — they were skipped because they require a different repo. The sprint 2 planner
   correctly identified this and focused on the lib/ work that WAS in scope.
+
+---
+
+## Sprint 3 Addendum (2026-03-19T23:00:00Z)
+
+### Do Not Repeat (sprint 3 additions)
+
+- **Factory commits from sibling worktrees do NOT auto-merge** — If a previous factory run
+  committed to a different worktree checkout of `factory/mar19`, those commits are reachable
+  via `git fetch` but NOT in the current worktree's HEAD. Always run `git fetch origin factory/mar19`
+  and `git log origin/factory/mar19 | head -20` before starting to understand what's already shipped.
+
+- **Do not re-implement work that's already on origin/factory/mar19** — Check the remote first.
+  Sprint 3 re-implemented all of sprint 2's work before discovering it was already there.
+  Wasted cycle. Next agent: fetch first, assess remote state, then build only what's missing.
+
+### Confirmed Patterns (sprint 3)
+
+- **git fetch + remote inspection as sprint kickoff ritual** — Run before any implementation:
+  `git fetch origin factory/mar19 && git log --oneline origin/factory/mar19 | head -20`
+  This reveals what prior factory runs shipped on this branch.
+
+### Open Threads (for next factory agent)
+
+- **ops/ config for OpenClaw + Treebot** — This is the remaining blocker for the morning
+  briefing March 24 target. The code is ready. The OpenClaw tool registration and Treebot
+  SOUL.md cron workflow must be wired in the separate infra repo that manages ops/ configs.
+  A human must identify which repo holds these configs and route the next factory agent there.
+
+- **ConnectOS tool names unverified** — Tool names shopify_orders, shopify_products,
+  shopify_revenue are assumed from the Execution Focus Brief. When ConnectOS ships the Shopify
+  adapter, run: `CONNECTOS_URL=https://staging.connectos node scripts/smoke-briefing.js`
+  to verify the health probe and validate tool registration is correct.
