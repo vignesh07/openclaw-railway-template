@@ -14,12 +14,13 @@ function routeWindow(marker, length = 1200) {
 }
 
 // (a) POST /setup/api/config/raw returns 410 (config writes disabled via handler)
+// Anchor on the handler call itself — stable across Prettier formatting of the route declaration.
 test("config apply: POST /setup/api/config/raw returns 410 with GONE code", () => {
-  const window = routeWindow('app.post("/setup/api/config/raw"');
-  // Upstream refactored: may use createRawConfigWriteDisabledHandler() or inline respondGone
+  const window = routeWindow("createRawConfigWriteDisabledHandler()", 120);
   assert.ok(
-    /respondGone\(/.test(window) || /createRawConfigWriteDisabledHandler/.test(window),
-    "route should use respondGone or createRawConfigWriteDisabledHandler"
+    /respondGone\(/.test(window) ||
+      /createRawConfigWriteDisabledHandler/.test(window),
+    "route should use respondGone or createRawConfigWriteDisabledHandler",
   );
 });
 
