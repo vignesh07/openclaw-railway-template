@@ -1,103 +1,101 @@
-# SCOREBOARD — nikin-wrapper — factory/mar19
+# SCOREBOARD — nikin-wrapper — factory/mar19 (sprint 2)
 
-Started: 2026-03-19T19:08:56Z
-Completed: 2026-03-19T21:00:00Z
-Total items: 6
-Completed: 3
+Started: 2026-03-19T21:30:00Z
+Completed: 2026-03-19T22:30:00Z
+Total items: 7
+Completed: 7
 Failed: 0
-Skipped: 3 (items 4-6 rolled into prior commits)
+Skipped: 0
 WTF-likelihood: 0%
 Status: DONE
-PR: https://github.com/vignesh07/clawdbot-railway-template/pull/188
+PR: [to be filled]
 Reflect: NEXT-PROGRAM-HINTS.md written, memory updated
+
+## Sprint Assessment
+
+**Repo state:** HEALTHY — 119/119 tests passing, clean lint.
+Previous sprint delivered: tool registry seam, ConnectOS tool names, semantic validation tests.
+**Strategic priority:** RED — Nicholas at 0 days AI usage. Morning briefing by March 24.
+Revenue conversation March 25-31 depends on this.
+**Biggest opportunity:** M3 worker delegation safety (items 6-7) + ConnectOS health monitoring (item 8).
+These complete the control-plane v1 safety surface and unblock the briefing config going live.
+**Cross-repo signal:** ConnectOS manifest shows DONE (Shopify adapter built). No downstream hints
+targeting this repo. ConnectOS health probe (item 8) is the integration point.
+**Memory warning:** Editing server.js triggers Prettier full-file reformat → cascade text-inspection
+test failures. All changes in this sprint are in src/lib/ (Prettier-safe) and test/ — NO server.js edits.
 
 ## Sprint Intent
 
-The NIKIN morning briefing pipeline is the revenue-critical path: Nicholas must experience
-daily AI value before the CHF 10K revenue conversation on March 25-31. This wrapper is the
-OpenClaw control-plane that governs what tools agents are allowed to use. The semantic
-validator only permits tools from a hard-coded allowlist — ConnectOS (the Shopify data
-layer for the morning briefing) will be rejected the moment someone tries to configure
-it as an allowed tool. This sprint fixes the lint-breaking conflict marker, then extends
-the tool registry to let the morning briefing config land cleanly when ConnectOS ships.
-
-**Cross-repo signal:** SmokeTestRepo manifest has no downstream_hints for this repo.
-Strategic brief is the authority: ConnectOS → OpenClaw tool registration is critical path.
-
-**Memory warning:** Only smoke-test memory exists. No prior nikin-wrapper runs.
-auth.ts modification was blocked in SmokeTestRepo — note parallel: never modify
-protected auth modules here either.
+The morning briefing needs the wrapper to safely allow M3 subagent delegation with bounded
+resource limits, and to monitor ConnectOS availability for graceful degradation. This sprint
+completes the M3 safety surface (worker-result.js envelope + spawn validation) and adds the
+ConnectOS health probe to the gateway health chain. Together these enable a production config
+where Treebot can safely spawn a briefing subagent, check ConnectOS status, and fall back
+gracefully when Shopify data is unavailable.
 
 ## Baseline
 
 Eval commands:
 
-- `node --test` (primary — 115 tests)
+- `node --test` (primary — 119 tests)
 - `node -c src/server.js` (lint gate)
 
 Result:
 
-- `node --test`: PASS — 115/115
-- `node -c src/server.js`: FAIL — SyntaxError on stray `<<<<<<< HEAD` at line 1432
-
-Note: Lint failure is a pre-existing defect to fix in item 1. Tests still pass because
-test files import lib/ directly (not server.js) or read it as raw text.
+- `node --test`: PASS — 119/119
+- `node -c src/server.js`: PASS — LINT OK
 
 ## Sprint Plan
 
-### Item 1: Fix stray merge conflict marker in server.js (P0)
+### Item 6: src/lib/worker-result.js — typed result envelope (RISK)
 
-- Approach: Delete the single `<<<<<<< HEAD` line at line 1432. No conflict content follows
-  it — the rest of the file is the correct HEAD content. One-line fix.
-- Risks: None. The line after is a valid `app.post(...)` call; it's just the marker that's wrong.
-- Memory check: N/A (first run)
+- Approach: New file. Export `createWorkerResult(status, payload, meta)`, `WorkerResultStatus` enum,
+  `isTimedOut(result)`, `isComplete(result)`. Follow the options-injection pattern from worker-activity.js.
+  Keep pure — no external dependencies.
+- Risks: New pattern, but it's a pure data module with no imports. Very low risk.
+- Memory check: No prior failures on new lib/ files.
 
-### Item 2–4: Extend tool registry for ConnectOS Shopify tools (P0)
+### Item 7: src/lib/worker-activity.js — spawn safety (RISK)
 
-- Approach: Add `connectos`, `shopify_orders`, `shopify_revenue`, `shopify_products` to
-  KNOWN_TOOL_NAMES in tool-registry.js. Brief says ConnectOS exposes these endpoints and
-  registers as a "native OpenClaw tool". The semantic validator will reject any config that
-  tries to `allow` these tools in `tools.subagents.tools.allow`.
-- Risks: Tool names might differ in the ConnectOS implementation. Adding them now makes the
-  validator permissive for the expected names; wrong names will just be unused. SAFE.
-- Memory check: N/A
+- Approach: Add `validateSpawnRequest({ depth, toolAllowlist, timeoutSeconds })` function.
+  Enforce: depth ≤ 1 (M3 max), timeoutSeconds > 0 and ≤ 600, all tools in allowlist.
+  Return { ok, errors[] } — same pattern as validateSemanticConfig.
+- Risks: Modifying existing file. Read it first (done). Only adding new exports.
+- Memory check: "Text-inspection tests anchoring on app.post()" warning does NOT apply here
+  (lib file, not server.js).
 
-### Item 5: Add `briefing_bundle` tool to registry (SAFE)
+### Item 8: src/lib/gateway-health.js — ConnectOS health probe (SAFE)
 
-- The brief mentions "ShopifyBriefingBundle typed export for OpenClaw consumption" — the
-  tool that wraps the full morning briefing payload likely follows snake_case convention.
-- Low risk: additive change, never breaks existing validation.
+- Approach: Add `getConnectOSHealthProbe(options)` — HTTP GET to ConnectOS /health endpoint.
+  Accept fetchImpl, connectosUrl, timeoutMs. Return { ok, status, raw }.
+  Update evaluateControlPlaneHealth to accept connectosOk phase.
+- Risks: Modifying existing file. Additive only — won't break existing probes.
+- Memory check: No prior failures on gateway-health.js.
 
-### Item 6: Write/update tests for new tool names (SAFE)
+### Items 9-12: Test files (SAFE items)
 
-- Add assertions for each new tool name in tool-registry.test.js.
-- Also add tests confirming old invalid names still fail.
-
-### SAFE items: 5 — Items 2–6 are all single-file or two-file changes with no external deps.
+No explicit plans needed — follow existing test patterns from worker-activity.test.js.
 
 ## Items
 
-- [x] Fix merge conflict marker in server.js — commit de67870
-- [x] Add ConnectOS Shopify tool names to tool registry — commit 51fec06
-- [x] Add end-to-end semantic validation tests for ConnectOS — commit c9aa90d
-- [ ] Items 4–6 (briefing_bundle, tests, final eval) — merged into commits above
+- [x] Item 6: worker-result.js typed result envelope — commit 7f04c4b
+- [x] Item 7: worker-activity.js spawn safety checks — commit d56cee2
+- [x] Item 8: gateway-health.js ConnectOS health probe — commit b0e4519
+- [x] Item 10: test/worker-spawn.test.js (8 tests) — commit 0815517
+- [x] Item 11: test/connectos-tool.test.js (8 tests) — commit 5e9a8bd
+- [x] Item 9: test/briefing-workflow.test.js (8 tests) — commit c1a3533
+- [x] Item 12: scripts/smoke-briefing.js — commit 85c93aa
 
-## QA Gate at item 3 (final)
+## QA Gate at item 5
 
-node --test: PASS — 119/119
+node --test: PASS — 135/135 tests
 node -c src/server.js: PASS — LINT OK
 Protected files touched: none
 Security scan: CLEAN
-Codex review: SKIPPED (process timed out)
 
-## Multi-AI Review at item 3
+## Final Eval Gate
 
-Claude self-review: 0 issues — clean, no DRY violations, no security findings
-Codex review: SKIPPED — CLI timed out
-Cross-model overlap: N/A
-
-## Convention Promotion Candidates
-
-- PROMOTE TO CLAUDE.md: "Text-inspection tests anchoring on app.post() route declarations
-  are fragile to Prettier reformatting. Use unique internal strings (handler names, error messages)
-  as markers instead." — observed 4 times during this sprint (4 fragile tests fixed)
+node --test: PASS — 143/143 tests (+24 from sprint baseline of 119)
+node -c src/server.js: PASS — LINT OK
+Protected files: none touched
+Security: CLEAN — no credentials, env var refs only

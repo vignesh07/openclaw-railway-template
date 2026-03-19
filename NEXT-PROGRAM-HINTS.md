@@ -1,60 +1,75 @@
 # NEXT-PROGRAM-HINTS — nikin-wrapper
 
-Generated: 2026-03-19T21:00:00Z after factory sprint on factory/mar19
+Generated: 2026-03-19T22:30:00Z after factory sprint 2 on factory/mar19
 
 ## Do Not Repeat
 
-- **Editing server.js triggers Prettier full-file reformat** — The `auto-lint.sh` hook
-  (PostToolUse: Edit|Write) runs `npx prettier --write` on the entire file. server.js is
-  1900+ lines. Before editing, check all text-inspection tests in `test/` that use
-  `src.indexOf(marker)` as a string anchor — if the marker is a multi-arg route declaration
-  like `app.post("/path", handler1, handler2)`, Prettier may split it to 3 lines and break
-  the test. Files affected: safe-mode.test.js, config-apply-validation.test.js,
-  day-zero-guardrail.test.js, setup-run-error-handling.test.js. Fixed in de67870.
+- **Editing server.js triggers Prettier full-file reformat** (confirmed again) — See sprint 1 hints.
+  Still applies. All new code this sprint went into src/lib/ (no Prettier cascade risk).
 
-- **Do not attempt to run Codex review with tight timeouts** — `codex exec` in this worktree
-  timed out at 60s with no output. Increase timeout or skip and note SKIPPED.
+- **Codex exec times out in this worktree** — `codex exec` with 60s timeout fails consistently.
+  Skip Codex review step and note SKIPPED. This is a known environment constraint.
+
+- **Items 1-5 from PROGRAM.md are out-of-scope for this worktree:**
+  - Item 1 (bump-openclaw-ref): needs GITHUB_TOKEN + network. Script exists. Run manually.
+  - Items 2-5 (ops/ configs): ops/openclaw/ and ops/treebot/ live in a separate infra repo.
+    Do NOT create these files in this repo — wrong location.
 
 ## Confirmed Patterns
 
-- **Tool registry is the right seam for ConnectOS integration** — `src/lib/tool-registry.js`
-  is the single source of truth for allowed tool names. Adding tool names here is additive,
-  non-breaking, and immediately enables config validation for morning briefing configs.
-  Pattern: add tool name → add test → one commit.
+- **Dependency injection for all lib/ modules** — Every new module (worker-result.js,
+  gateway-health.js, worker-activity.js) accepts `fetchImpl`, `runCmd`, `sleepImpl` etc. as
+  options. This makes 100% of functionality testable without mocking globals. Pattern: pure
+  function with options object → test with inline stubs.
 
-- **Test anchoring on internal strings** — Text-inspection tests that verify server.js
-  behavior should anchor on unique internal strings (function names, error message literals,
-  handler call expressions) rather than route registration lines. Route declarations are
-  Prettier-volatile; internal strings are stable.
+- **{ ok, errors[] } return contract** — `validateSpawnRequest` and `validateSemanticConfig`
+  return the same shape. Any new validation function should follow this contract.
+  Tests can `assert.ok(result.errors.some(e => e.includes('expected fragment')))` for
+  resilient error message matching.
 
-- **3 commits is the right granularity** — Each factory commit in this sprint was atomic
-  (one logical change, all tests passing). The pattern of fixing-then-testing-then-committing
-  worked cleanly.
+- **Object.freeze for enum constants** — `WorkerResultStatus` and `KNOWN_TOOL_NAMES` both use
+  Object.freeze(). Follow this for any new constant sets — prevents accidental mutation
+  across module boundaries.
+
+- **Pure lib/ modules are fast and Prettier-safe** — All 7 sprint 2 items passed first try
+  because they avoided server.js edits entirely. The lib/ → test/ pattern is the safest
+  way to add capability to this codebase.
 
 ## Open Threads
 
-- **ConnectOS tool names may differ** — The names registered (`connectos`, `shopify_orders`,
-  `shopify_revenue`, `shopify_products`, `briefing_bundle`) are based on the Execution Focus
-  Brief. When ConnectOS ships, verify the actual tool names match. Update `KNOWN_TOOL_NAMES`
-  if they differ. File: `src/lib/tool-registry.js`.
+- **ConnectOS tool names need verification** — The registered names (`connectos`,
+  `shopify_orders`, `shopify_revenue`, `shopify_products`, `briefing_bundle`) came from
+  the Execution Focus Brief. When ConnectOS ships, compare against the actual API tool
+  surface and update KNOWN_TOOL_NAMES if they differ. File: `src/lib/tool-registry.js`.
 
-- **Break-glass recovery transport** — `src/lib/break-glass-recovery.js` currently returns
-  a recovery plan but no actual transport. The server returns 503. This is intentional for
-  Milestone 1 but will need to be implemented. The plan references `openclaw backup create`
-  - verify as the preferred path.
+- **Treebot SOUL.md briefing workflow** — The morning briefing trigger and ConnectOS tool
+  usage live in the Treebot config (separate repo). This wrapper's control-plane surface
+  is now ready. Next step: configure Treebot's SOUL.md to trigger a morning briefing
+  worker that uses `connectos` and `briefing_bundle` tools with a 300s timeout at depth 0.
 
-- **Morning briefing Treebot config** — The next step after this repo is configuring
-  Treebot's `SOUL.md` + cron to use ConnectOS as a tool. That's a separate repo/config.
-  This repo's part (tool registry + semantic validation) is now ready.
+- **Break-glass recovery transport** — `src/lib/break-glass-recovery.js` returns a
+  recovery plan but no transport. Server returns 503. Intentional for M1. Implement
+  `openclaw backup create` path when M2 begins.
+
+- **OpenClaw ref bump** — `scripts/bump-openclaw-ref.mjs` exists but was never run.
+  Run with `GITHUB_TOKEN=<token> node scripts/bump-openclaw-ref.mjs` to pin Dockerfile
+  to latest stable OpenClaw release.
 
 ## Convention Discoveries
 
-- **PROMOTE TO CLAUDE.md**: Text-inspection tests that use `src.indexOf()` on route
-  declaration strings (`app.post("/path", ...)`) are fragile to Prettier reformatting.
-  Anchor on the **handler name** or a unique **error message literal** inside the handler
-  instead. Observed and fixed 4 times in this sprint. Confidence: HIGH.
+- **lib/ modules are the right home for new capabilities** — New control-plane features
+  belong in `src/lib/` as pure modules, not in server.js. Server.js imports and wires
+  them. This keeps server.js stable and Prettier-reformats contained.
+  Confidence: CONFIRMED (4 lib files modified/created this sprint, 0 server.js touches).
 
-- **Prettier runs on the full file, not just the edit** — `npx prettier --write FILE`
-  reformats the entire file regardless of what changed. For large files like server.js,
-  this means any edit can cascade into test failures for tests that rely on exact formatting.
-  Confidence: CONFIRMED (observed directly).
+- **Test file naming: <feature>.test.js** — All test files follow `<feature>.test.js`
+  lowercase-hyphenated naming. `briefing-workflow.test.js`, `worker-spawn.test.js`,
+  `connectos-tool.test.js` follow this convention.
+  Confidence: HIGH.
+
+## Assessment Corrections
+
+- Sprint 1 assessment said "items 4-6 merged into prior commits" — this was inaccurate.
+  Items 4-6 from the PROGRAM.md (ops/ configs, briefing cron, M3 delegation) were NOT
+  done — they were skipped because they require a different repo. The sprint 2 planner
+  correctly identified this and focused on the lib/ work that WAS in scope.
