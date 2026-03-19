@@ -83,6 +83,7 @@ RUN apt-get update \
     xfce4-settings \
     xfdesktop4 \
     xfwm4 \
+    chromium \
   && rm -rf /var/lib/apt/lists/*
 
 # `openclaw update` expects pnpm. Provide it in the runtime image.
