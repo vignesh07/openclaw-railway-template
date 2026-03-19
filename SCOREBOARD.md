@@ -84,5 +84,17 @@ Claude self-review: 0 issues found
 Codex review: SKIPPED (CLI not available)
 Cross-model overlap: N/A
 Overall: CLEAN — no secrets, no protected files, all tests green
+
+## Convention Promotion Candidates
+
+- PROMOTE TO CLAUDE.md: "ops/ config (OpenClaw + Treebot SOUL.md) lives in a SEPARATE infra repo
+  — do not attempt ops/ changes in this repo" — observed 4× across all factory sprints
+- PROMOTE TO CLAUDE.md: "Factory sprint branches must be named factory/mar19-sprintN (not
+  reusing origin/factory/mar19 which accumulates diverged commits)" — observed on sprint 4
+- PROMOTE TO CLAUDE.md: "New capabilities go in src/lib/ as pure injectable modules; all
+  validation functions return { ok: boolean, errors: string[] }" — 4 sprints, 0 failures
+
+PR: https://github.com/vignesh07/clawdbot-railway-template/pull/189
+Reflect: NEXT-PROGRAM-HINTS.md written, memory updated
 </content>
 </invoke>
