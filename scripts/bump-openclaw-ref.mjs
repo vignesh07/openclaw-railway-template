@@ -14,7 +14,7 @@ async function gh(path) {
     headers: {
       authorization: `Bearer ${token}`,
       accept: "application/vnd.github+json",
-      "user-agent": "clawdbot-railway-template-bot",
+      "user-agent": "agent-railway-template-bot",
     },
   });
   if (!res.ok) {

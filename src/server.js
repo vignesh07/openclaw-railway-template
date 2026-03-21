@@ -3,10 +3,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import next from "next";
 
 import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
+
+import { appendSetupEvent, getSetupDbPath, listSetupEvents } from "../lib/setup-store.js";
 
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
 // keep working. Users should update their Railway Variables to use the new names.
@@ -69,6 +72,9 @@ function resolveGatewayToken() {
 
 const OPENCLAW_GATEWAY_TOKEN = resolveGatewayToken();
 process.env.OPENCLAW_GATEWAY_TOKEN = OPENCLAW_GATEWAY_TOKEN;
+
+const nextApp = next({ dev: process.env.NODE_ENV !== "production" });
+const nextHandler = nextApp.getRequestHandler();
 
 // Where the gateway will listen internally (we proxy to it).
 const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT ?? "18789", 10);
@@ -354,182 +360,6 @@ app.get("/healthz", async (_req, res) => {
   });
 });
 
-app.get("/setup/app.js", requireSetupAuth, (_req, res) => {
-  // Serve JS for /setup (kept external to avoid inline encoding/template issues)
-  res.type("application/javascript");
-  res.send(fs.readFileSync(path.join(process.cwd(), "src", "setup-app.js"), "utf8"));
-});
-
-app.get("/setup", requireSetupAuth, (_req, res) => {
-  // No inline <script>: serve JS from /setup/app.js to avoid any encoding/template-literal issues.
-  res.type("html").send(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OpenClaw Setup</title>
-  <style>
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 2rem; max-width: 900px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
-    label { display:block; margin-top: 0.75rem; font-weight: 600; }
-    input, select { width: 100%; padding: 0.6rem; margin-top: 0.25rem; }
-    button { padding: 0.8rem 1.2rem; border-radius: 10px; border: 0; background: #111; color: #fff; font-weight: 700; cursor: pointer; }
-    code { background: #f6f6f6; padding: 0.1rem 0.3rem; border-radius: 6px; }
-    .muted { color: #555; }
-  </style>
-</head>
-<body>
-  <h1>OpenClaw Setup</h1>
-  <p class="muted">This wizard configures OpenClaw by running the same onboarding command it uses in the terminal, but from the browser.</p>
-
-  <div class="card">
-    <h2>Status</h2>
-    <div id="status">Loading...</div>
-    <div id="statusDetails" class="muted" style="margin-top:0.5rem"></div>
-    <div style="margin-top: 0.75rem">
-      <a href="/openclaw" target="_blank">Open OpenClaw UI</a>
-      &nbsp;|&nbsp;
-      <a href="/setup/export" target="_blank">Download backup (.tar.gz)</a>
-    </div>
-
-    <div style="margin-top: 0.75rem">
-      <div class="muted" style="margin-bottom:0.25rem"><strong>Import backup</strong> (advanced): restores into <code>/data</code> and restarts the gateway.</div>
-      <input id="importFile" type="file" accept=".tar.gz,application/gzip" />
-      <button id="importRun" style="background:#7c2d12; margin-top:0.5rem">Import</button>
-      <pre id="importOut" style="white-space:pre-wrap"></pre>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Debug console</h2>
-    <p class="muted">Run a small allowlist of safe commands (no shell). Useful for debugging and recovery.</p>
-
-    <div style="display:flex; gap:0.5rem; align-items:center">
-      <select id="consoleCmd" style="flex: 1">
-        <option value="gateway.restart">gateway.restart (wrapper-managed)</option>
-        <option value="gateway.stop">gateway.stop (wrapper-managed)</option>
-        <option value="gateway.start">gateway.start (wrapper-managed)</option>
-        <option value="openclaw.status">openclaw status</option>
-        <option value="openclaw.health">openclaw health</option>
-        <option value="openclaw.doctor">openclaw doctor</option>
-        <option value="openclaw.logs.tail">openclaw logs --tail N</option>
-        <option value="openclaw.config.get">openclaw config get &lt;path&gt;</option>
-        <option value="openclaw.version">openclaw --version</option>
-        <option value="openclaw.devices.list">openclaw devices list</option>
-        <option value="openclaw.devices.approve">openclaw devices approve &lt;requestId&gt;</option>
-        <option value="openclaw.plugins.list">openclaw plugins list</option>
-        <option value="openclaw.plugins.enable">openclaw plugins enable &lt;name&gt;</option>
-      </select>
-      <input id="consoleArg" placeholder="Optional arg (e.g. 200, gateway.port)" style="flex: 1" />
-      <button id="consoleRun" style="background:#0f172a">Run</button>
-    </div>
-    <pre id="consoleOut" style="white-space:pre-wrap"></pre>
-  </div>
-
-  <div class="card">
-    <h2>Config editor (advanced)</h2>
-    <p class="muted">Edits the full config file on disk (JSON5). Saving creates a timestamped <code>.bak-*</code> backup and restarts the gateway.</p>
-    <div class="muted" id="configPath"></div>
-    <textarea id="configText" style="width:100%; height: 260px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"></textarea>
-    <div style="margin-top:0.5rem">
-      <button id="configReload" style="background:#1f2937">Reload</button>
-      <button id="configSave" style="background:#111; margin-left:0.5rem">Save</button>
-    </div>
-    <pre id="configOut" style="white-space:pre-wrap"></pre>
-  </div>
-
-  <div class="card">
-    <h2>1) Model/auth provider</h2>
-    <p class="muted">Matches the groups shown in the terminal onboarding.</p>
-    <label>Provider group</label>
-    <select id="authGroup">
-      <option>Loading providers…</option>
-    </select>
-
-    <label>Auth method</label>
-    <select id="authChoice">
-      <option>Loading methods…</option>
-    </select>
-
-    <label>Key / Token (if required)</label>
-    <input id="authSecret" type="password" placeholder="Paste API key / token if applicable" />
-
-    <label>Wizard flow</label>
-    <select id="flow">
-      <option value="quickstart">quickstart</option>
-      <option value="advanced">advanced</option>
-      <option value="manual">manual</option>
-    </select>
-  </div>
-
-  <div class="card">
-    <h2>2) Optional: Channels</h2>
-    <p class="muted">You can also add channels later inside OpenClaw, but this helps you get messaging working immediately.</p>
-
-    <label>Telegram bot token (optional)</label>
-    <input id="telegramToken" type="password" placeholder="123456:ABC..." />
-    <div class="muted" style="margin-top: 0.25rem">
-      Get it from BotFather: open Telegram, message <code>@BotFather</code>, run <code>/newbot</code>, then copy the token.
-    </div>
-
-    <label>Discord bot token (optional)</label>
-    <input id="discordToken" type="password" placeholder="Bot token" />
-    <div class="muted" style="margin-top: 0.25rem">
-      Get it from the Discord Developer Portal: create an application, add a Bot, then copy the Bot Token.<br/>
-      <strong>Important:</strong> Enable <strong>MESSAGE CONTENT INTENT</strong> in Bot → Privileged Gateway Intents, or the bot will crash on startup.
-    </div>
-
-    <label>Slack bot token (optional)</label>
-    <input id="slackBotToken" type="password" placeholder="xoxb-..." />
-
-    <label>Slack app token (optional)</label>
-    <input id="slackAppToken" type="password" placeholder="xapp-..." />
-  </div>
-
-  <div class="card">
-    <h2>2b) Advanced: Custom OpenAI-compatible provider (optional)</h2>
-    <p class="muted">Use this to configure an OpenAI-compatible API that requires a custom base URL (e.g. Ollama, vLLM, LM Studio, hosted proxies). You usually set the API key as a Railway variable and reference it here.</p>
-
-    <label>Provider id (e.g. ollama, deepseek, myproxy)</label>
-    <input id="customProviderId" placeholder="ollama" />
-
-    <label>Base URL (must include /v1, e.g. http://host:11434/v1)</label>
-    <input id="customProviderBaseUrl" placeholder="http://127.0.0.1:11434/v1" />
-
-    <label>API (openai-completions or openai-responses)</label>
-    <select id="customProviderApi">
-      <option value="openai-completions">openai-completions</option>
-      <option value="openai-responses">openai-responses</option>
-    </select>
-
-    <label>API key env var name (optional, e.g. OLLAMA_API_KEY). Leave blank for no key.</label>
-    <input id="customProviderApiKeyEnv" placeholder="OLLAMA_API_KEY" />
-
-    <label>Optional model id to register (e.g. llama3.1:8b)</label>
-    <input id="customProviderModelId" placeholder="" />
-  </div>
-
-  <div class="card">
-    <h2>3) Run onboarding</h2>
-    <button id="run">Run setup</button>
-    <button id="pairingApprove" style="background:#1f2937; margin-left:0.5rem">Approve pairing</button>
-    <button id="reset" style="background:#444; margin-left:0.5rem">Reset setup</button>
-    <pre id="log" style="white-space:pre-wrap"></pre>
-    <p class="muted">Reset deletes the OpenClaw config file so you can rerun onboarding. Pairing approval lets you grant DM access when dmPolicy=pairing.</p>
-
-    <details style="margin-top: 0.75rem">
-      <summary><strong>Pairing helper</strong> (for “disconnected (1008): pairing required”)</summary>
-      <p class="muted">This lists pending device requests and lets you approve them without SSH.</p>
-      <button id="devicesRefresh" style="background:#0f172a">Refresh pending devices</button>
-      <div id="devicesList" class="muted" style="margin-top:0.5rem"></div>
-    </details>
-  </div>
-
-  <script src="/setup/app.js"></script>
-</body>
-</html>`);
-});
-
 const AUTH_GROUPS = [
   { value: "openai", label: "OpenAI", hint: "Codex OAuth + API key", options: [
     { value: "codex-cli", label: "OpenAI Codex OAuth (Codex CLI)" },
@@ -588,7 +418,12 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     openclawVersion: version.output.trim(),
     channelsAddHelp: channelsHelp.output,
     authGroups: AUTH_GROUPS,
+    setupDbPath: getSetupDbPath(),
   });
+});
+
+app.get("/setup/api/terminal", requireSetupAuth, (_req, res) => {
+  res.json({ ok: true, dbPath: getSetupDbPath(), events: listSetupEvents() });
 });
 
 app.get("/setup/api/auth-groups", requireSetupAuth, (_req, res) => {
@@ -711,6 +546,7 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     };
     if (isConfigured()) {
       await ensureGatewayRunning();
+      logSetupEvent("setup", "Setup run skipped.", "Already configured. Use Reset setup if you want to rerun onboarding.");
       return respondJson(200, {
         ok: true,
         output: "Already configured.\nUse Reset setup if you want to rerun onboarding.\n",
@@ -726,6 +562,7 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     try {
       onboardArgs = buildOnboardArgs(payload);
     } catch (err) {
+      logSetupEvent("setup", "Setup input error.", String(err));
       return respondJson(400, { ok: false, output: `Setup input error: ${String(err)}` });
     }
 
@@ -876,12 +713,19 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await restartGateway();
   }
 
+  logSetupEvent(
+    "setup",
+    ok ? "Setup run completed." : "Setup run failed.",
+    `${prefix}${onboard.output}${extra}`,
+  );
+
   return respondJson(ok ? 200 : 500, {
     ok,
     output: `${prefix}${onboard.output}${extra}`,
   });
   } catch (err) {
     console.error("[/setup/api/run] error:", err);
+    logSetupEvent("setup", "Setup request failed.", String(err));
     return respondJson(500, { ok: false, output: `Internal error: ${String(err)}` });
   }
 });
@@ -907,6 +751,7 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
       configured: isConfigured(),
       configPathResolved: configPath(),
       configPathCandidates: typeof resolveConfigCandidates === "function" ? resolveConfigCandidates() : null,
+      setupDbPath: getSetupDbPath(),
       internalGatewayHost: INTERNAL_GATEWAY_HOST,
       internalGatewayPort: INTERNAL_GATEWAY_PORT,
       gatewayTarget: GATEWAY_TARGET,
@@ -956,6 +801,18 @@ function redactSecrets(text) {
     .replace(/(AA[A-Za-z0-9_-]{10,}:\S{10,})/g, "[REDACTED]");
 }
 
+function logSetupEvent(source, title, body) {
+  try {
+    appendSetupEvent({
+      source,
+      title,
+      body: redactSecrets(body || ""),
+    });
+  } catch (err) {
+    console.warn(`[setup-log] failed to persist event: ${String(err)}`);
+  }
+}
+
 function extractDeviceRequestIds(text) {
   const s = String(text || "");
   const out = new Set();
@@ -999,9 +856,15 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
   }
 
   try {
+    const logCommandResult = (statusCode, payload) => {
+      const output = redactSecrets(payload?.output || payload?.error || "");
+      logSetupEvent("console", `$ ${cmd}${arg ? ` ${arg}` : ""}`, output || `HTTP ${statusCode}`);
+      return res.status(statusCode).json({ ...payload, output });
+    };
+
     if (cmd === "gateway.restart") {
       await restartGateway();
-      return res.json({ ok: true, output: "Gateway restarted (wrapper-managed).\n" });
+      return logCommandResult(200, { ok: true, output: "Gateway restarted (wrapper-managed).\n" });
     }
     if (cmd === "gateway.stop") {
       if (gatewayProc) {
@@ -1009,44 +872,44 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
         await sleep(750);
         gatewayProc = null;
       }
-      return res.json({ ok: true, output: "Gateway stopped (wrapper-managed).\n" });
+      return logCommandResult(200, { ok: true, output: "Gateway stopped (wrapper-managed).\n" });
     }
     if (cmd === "gateway.start") {
       const r = await ensureGatewayRunning();
-      return res.json({ ok: Boolean(r.ok), output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n` });
+      return logCommandResult(200, { ok: Boolean(r.ok), output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n` });
     }
 
     if (cmd === "openclaw.version") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.status") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["status"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.health") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["health"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.doctor") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.logs.tail") {
       const lines = Math.max(50, Math.min(1000, Number.parseInt(arg || "200", 10) || 200));
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["logs", "--tail", String(lines)]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.config.get") {
       if (!arg) return res.status(400).json({ ok: false, error: "Missing config path" });
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", arg]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
 
     // Device management commands (for fixing "disconnected (1008): pairing required")
     if (cmd === "openclaw.devices.list") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "list"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.devices.approve") {
       const requestId = String(arg || "").trim();
@@ -1057,24 +920,25 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
         return res.status(400).json({ ok: false, error: "Invalid device request ID" });
       }
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "approve", requestId]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
 
     // Plugin management commands
     if (cmd === "openclaw.plugins.list") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["plugins", "list"]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
     if (cmd === "openclaw.plugins.enable") {
       const name = String(arg || "").trim();
       if (!name) return res.status(400).json({ ok: false, error: "Missing plugin name" });
       if (!/^[A-Za-z0-9_-]+$/.test(name)) return res.status(400).json({ ok: false, error: "Invalid plugin name" });
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["plugins", "enable", name]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
     }
 
     return res.status(400).json({ ok: false, error: "Unhandled command" });
   } catch (err) {
+    logSetupEvent("console", `$ ${cmd}${arg ? ` ${arg}` : ""}`, String(err));
     return res.status(500).json({ ok: false, error: String(err) });
   }
 });
@@ -1164,8 +1028,10 @@ app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
       try { fs.rmSync(p, { force: true }); } catch {}
     }
 
+    logSetupEvent("setup", "Setup reset completed.", "Stopped gateway and deleted config file(s). You can rerun setup now.");
     res.type("text/plain").send("OK - stopped gateway and deleted config file(s). You can rerun setup now.");
   } catch (err) {
+    logSetupEvent("setup", "Setup reset failed.", String(err));
     res.status(500).type("text/plain").send(String(err));
   }
 });
@@ -1309,6 +1175,22 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
   }
 });
 
+await nextApp.prepare();
+
+app.use(async (req, res, nextMiddleware) => {
+  if (req.path === "/setup" || req.path.startsWith("/setup/")) {
+    return requireSetupAuth(req, res, async () => {
+      try {
+        await nextHandler(req, res);
+      } catch (err) {
+        nextMiddleware(err);
+      }
+    });
+  }
+
+  return nextMiddleware();
+});
+
 // Proxy everything else to the gateway.
 const proxy = httpProxy.createProxyServer({
   target: GATEWAY_TARGET,
@@ -1406,9 +1288,16 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
 
   console.log(`[wrapper] gateway token: ${OPENCLAW_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
   console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
+  console.log(`[wrapper] setup db: ${getSetupDbPath()}`);
   if (!SETUP_PASSWORD) {
     console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
   }
+
+  logSetupEvent(
+    "system",
+    "Wrapper started.",
+    `setup db: ${getSetupDbPath()}\ngateway target: ${GATEWAY_TARGET}\nconfigured: ${isConfigured() ? "yes" : "no"}`,
+  );
 
   // Optional operator hook to install/persist extra tools under /data.
   // This is intentionally best-effort and should be used to set up persistent

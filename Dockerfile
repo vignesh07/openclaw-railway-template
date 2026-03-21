@@ -21,10 +21,8 @@ RUN corepack enable
 WORKDIR /openclaw
 ENV NODE_OPTIONS=--max-old-space-size=4096
 
-# Pin to a known-good ref (tag/branch). Override in Railway template settings if needed.
-# Using a released tag avoids build breakage when `main` temporarily references unpublished packages.
-ARG OPENCLAW_GIT_REF=v2026.3.13-1
-RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
+ARG OPENCLAW_GIT_REF=main
+RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/AaronPerk/openclaw.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions.
 # Apply to all extension package.json files to handle workspace protocol (workspace:*).
@@ -34,12 +32,16 @@ RUN set -eux; \
     sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*"workspace:[^"]+"/"openclaw": "*"/g' "$f"; \
   done
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm config set fetch-retries 5 \
+  && pnpm config set fetch-retry-factor 2 \
+  && pnpm config set fetch-retry-maxtimeout 120000 \
+  && pnpm config set network-timeout 600000 \
+  && pnpm install --no-frozen-lockfile
 # OpenClaw v2026.3.13-1 expects the generated A2UI bundle to exist before `build:docker`.
 # The bundle is gitignored upstream, so Docker builds must generate it explicitly.
 RUN pnpm canvas:a2ui:bundle && pnpm build:docker
 ENV OPENCLAW_PREFER_PNPM=1
-RUN pnpm ui:install && pnpm ui:build
+RUN pnpm --dir ui run build
 
 
 # Runtime image
@@ -59,6 +61,29 @@ RUN set -eux; \
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
+    chromium \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
     python3 \
     python3-venv \
     tini; \
@@ -79,8 +104,7 @@ RUN set -eux; \
       xfce4-session \
       xfce4-settings \
       xfdesktop4 \
-      xfwm4 \
-      chromium; \
+      xfwm4; \
   fi; \
   rm -rf /var/lib/apt/lists/*
 
@@ -100,7 +124,7 @@ WORKDIR /app
 
 # Wrapper deps
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --include=dev
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
@@ -112,7 +136,13 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
 COPY scripts/start-desktop.sh scripts/container-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/start-desktop.sh /usr/local/bin/container-entrypoint.sh
 
+COPY app ./app
+COPY components ./components
+COPY lib ./lib
 COPY src ./src
+COPY next.config.mjs postcss.config.mjs tailwind.config.js jsconfig.json ./
+
+RUN npm run setup:build && npm prune --omit=dev && npm cache clean --force
 
 # The wrapper listens on $PORT.
 # IMPORTANT: Do not set a default PORT here.

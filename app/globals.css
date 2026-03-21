@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 34% 7%;
+    --foreground: 210 20% 92%;
+    --panel: 216 29% 10%;
+    --terminal: 216 40% 5%;
+    --card: 217 24% 11%;
+    --card-foreground: 210 20% 92%;
+    --muted: 217 18% 16%;
+    --muted-foreground: 214 13% 66%;
+    --border: 217 18% 24%;
+    --input: 217 18% 17%;
+    --primary: 188 100% 62%;
+    --primary-foreground: 216 34% 8%;
+    --secondary: 216 20% 18%;
+    --secondary-foreground: 210 20% 92%;
+    --accent: 46 96% 62%;
+    --accent-foreground: 216 34% 8%;
+    --success: 145 63% 48%;
+    --warning: 39 95% 57%;
+    --danger: 0 70% 58%;
+    --ring: 188 100% 62%;
+    --radius: 1rem;
+    --terminal-height-mobile: 24rem;
+    --terminal-height: 34rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at top left, hsl(var(--primary) / 0.16), transparent 30%),
+      radial-gradient(circle at top right, hsl(var(--accent) / 0.08), transparent 24%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(var(--panel)));
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(hsl(var(--foreground) / 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.02) 1px, transparent 1px);
+    background-size: 2.5rem 2.5rem;
+    mask-image: linear-gradient(180deg, black, transparent 92%);
+  }
+
+  a {
+    @apply transition-colors;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+    color: hsl(var(--foreground));
+  }
+}

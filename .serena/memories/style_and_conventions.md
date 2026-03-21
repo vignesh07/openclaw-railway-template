@@ -1,0 +1,1 @@
+Project is minimal JavaScript/ESM rather than TypeScript. Conventions favor straightforward functions, top-level constants, explicit env handling, and small helper functions. Comments explain deployment/runtime constraints. Existing frontend is plain server-rendered HTML plus a standalone browser JS file. Keep changes pragmatic and deployment-focused.

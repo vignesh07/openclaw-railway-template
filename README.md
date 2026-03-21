@@ -1,11 +1,11 @@
 # OpenClaw Railway Template (1‑click deploy)
 
-This repo packages **OpenClaw** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
+This repo packages **OpenClaw** for Railway with a small **/setup** web app so users can deploy and operate the wrapper from a browser.
 
 ## What you get
 
 - **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
-- A friendly **Setup Wizard** at `/setup` (protected by a password)
+- A minimal **Next.js setup surface** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
 - **Import backup** from `/setup` (advanced recovery)
@@ -14,7 +14,8 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web wizard s
 
 - The container runs a wrapper web server.
 - The wrapper protects `/setup` (and the Control UI at `/openclaw`) with `SETUP_PASSWORD` using HTTP Basic auth.
-- During setup, the wrapper runs `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
+- The `/setup` app is a Next.js control surface backed by a small SQLite database stored in the persistent state directory.
+- During setup, the wrapper can still run `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
 - After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
 
 ## Railway deploy instructions (what you’ll publish as a Template)
@@ -36,7 +37,8 @@ Optional:
 - `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
 
 Notes:
-- This template pins OpenClaw to a released version by default via Docker build arg `OPENCLAW_GIT_REF` (override if you want `main`).
+- This template builds OpenClaw from `https://github.com/AaronPerk/openclaw.git`.
+- By default it uses the `main` branch via Docker build arg `OPENCLAW_GIT_REF`; set that build arg only when you want to pin a specific branch, tag, or ref.
 
 4) Enable **Public Networking** (HTTP). Railway will assign a domain.
    - This service listens on Railway’s injected `PORT` at runtime (recommended).
@@ -50,7 +52,7 @@ Then:
 
 ## Support / community
 
-- GitHub Issues: https://github.com/vignesh07/clawdbot-railway-template/issues
+- GitHub Issues: https://github.com/AaronPerk/agent-railway-template/issues
 - Discord: https://discord.com/invite/clawd
 
 If you’re filing a bug, please include the output of:
@@ -160,7 +162,7 @@ Recommendations:
 ## Local smoke test
 
 ```bash
-docker build -t clawdbot-railway-template .
+docker build -t agent-railway-template .
 
 docker run --rm -p 8080:8080 \
   -e PORT=8080 \
@@ -168,7 +170,7 @@ docker run --rm -p 8080:8080 \
   -e OPENCLAW_STATE_DIR=/data/.openclaw \
   -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
   -v $(pwd)/.tmpdata:/data \
-  clawdbot-railway-template
+  agent-railway-template
 
 # open http://localhost:8080/setup (password: test)
 ```
@@ -186,7 +188,4 @@ docker run --rm -p 8080:8080 \
 
   ![Jake Cooper endorsement tweet screenshot](assets/railway-ceo-endorsement.jpg)
 
-- Created and maintained by **Vignesh N (@vignesh07)**
-- **1800+ deploys on Railway and counting** [Link to template on Railway](https://railway.com/deploy/clawdbot-railway-template)
-
-![Railway template deploy count](assets/railway-deploys.jpg)
+- Template repository: <https://github.com/AaronPerk/agent-railway-template>
