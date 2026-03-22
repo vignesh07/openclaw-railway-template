@@ -1,0 +1,40 @@
+{
+  "description": "ConnectOS API access (direct). Fetches daily briefing data, triggers delivery pipeline, and checks ConnectOS health. If ConnectOS is unavailable, tools will return an error — fall back to informing the user that data is temporarily unavailable.",
+  "tools": [
+    {
+      "name": "briefing_daily",
+      "description": "Fetch the unified daily briefing (Telegram-formatted HTML) directly from ConnectOS. Returns Shopify, HubSpot, Slack, Calendar, Stripe, Linear, Meta Ads, Instagram, and GA4 data aggregated for Nicholas. If unavailable, inform the user that the briefing service is temporarily down.",
+      "method": "GET",
+      "url": "${CONNECTOS_URL}/api/briefing/daily",
+      "auth": {
+        "type": "bearer",
+        "tokenEnv": "CONNECTOS_TOKEN"
+      },
+      "response": {
+        "ok": "boolean",
+        "telegramText": "string",
+        "fallback": "boolean"
+      }
+    },
+    {
+      "name": "briefing_deliver",
+      "description": "Trigger the full briefing delivery pipeline (fetch + format + send to Telegram) directly via ConnectOS. Use when Nicholas requests an immediate briefing outside the scheduled 06:00 run. If unavailable, inform the user that the delivery service is temporarily down.",
+      "method": "POST",
+      "url": "${CONNECTOS_URL}/api/briefing/deliver",
+      "auth": {
+        "type": "bearer",
+        "tokenEnv": "CONNECTOS_TOKEN"
+      }
+    },
+    {
+      "name": "health_connectos",
+      "description": "Check ConnectOS health directly. Returns status of all connected data sources (Shopify, HubSpot, Stripe, etc.). If this call fails, ConnectOS itself is unreachable.",
+      "method": "GET",
+      "url": "${CONNECTOS_URL}/api/health",
+      "auth": {
+        "type": "bearer",
+        "tokenEnv": "CONNECTOS_TOKEN"
+      }
+    }
+  ]
+}

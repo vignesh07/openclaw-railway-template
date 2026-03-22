@@ -1,0 +1,205 @@
+// Production OpenClaw config — Railway deployment (Nicholas / NIKIN)
+// Template: envsubst is run at container start — ${VAR} references are replaced.
+//
+// Required Railway env vars:
+//   ANTHROPIC_API_KEY           — model inference
+//   SETUP_PASSWORD              — gateway password
+//   TELEGRAM_BOT_TOKEN          — BotFather token for production bot
+//   TELEGRAM_WEBHOOK_SECRET     — Telegram webhook secret (random string, 32+ chars)
+//   TELEGRAM_NICHOLAS_CHAT_ID   — Nicholas's Telegram numeric chat ID
+//   CONNECTOS_URL               — ConnectOS API base URL
+//   CONNECTOS_TOKEN             — ConnectOS API bearer token
+//   OPENCLAW_WORKSPACE_DIR      — injected by railway.toml (/data/workspace)
+{
+  // ─── Gateway ────────────────────────────────────────────────────────────────
+  "gateway": {
+    "auth": {
+      "mode": "password",
+      "password": "${SETUP_PASSWORD}"
+    },
+
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": false,
+      "allowInsecureAuth": false
+    }
+  },
+
+  // ─── Agents ─────────────────────────────────────────────────────────────────
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-6",
+        "fallbacks": ["openai/gpt-5.2"]
+      },
+      "subagents": {
+        "maxConcurrent": 2,
+        "maxChildrenPerAgent": 5,
+        "maxSpawnDepth": 2,
+        "archiveAfterMinutes": 60,
+        "runTimeoutSeconds": 900
+      }
+    },
+
+    "list": [
+      {
+        "id": "main"
+      },
+      {
+        "id": "nikin-assistant",
+        "name": "NIKIN Assistant",
+        "model": "anthropic/claude-sonnet-4-6",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-assistant",
+
+        "systemPrompt": "You are the NIKIN AI assistant for Nicholas Mayer. Your primary job is delivering the daily ConnectOS morning briefing via Telegram every morning at 06:00 Europe/Zurich. When Nicholas messages you directly, answer helpfully. Use sub-agents for deep domain tasks (content, sustainability, analytics, ops, support). For briefings, follow skills/connectos-briefing.md exactly.",
+
+        "subagents": {
+          "model": "anthropic/claude-haiku-4-5",
+          "allowAgents": [
+            "nikin-content",
+            "nikin-sustainability",
+            "nikin-analytics",
+            "nikin-ops",
+            "nikin-support"
+          ]
+        },
+
+        "tools": {
+          "profile": "messaging",
+          "alsoAllow": [
+            "read",
+            "write",
+            "web_search",
+            "web_fetch",
+            "image",
+            "session_status",
+            "sessions_send",
+            "sessions_spawn"
+          ],
+          "fs": {
+            "workspaceOnly": true
+          },
+          "deny": [
+            "edit",
+            "apply_patch",
+            "process",
+            "subagents",
+            "group:automation",
+            "group:ui",
+            "group:nodes",
+            "agents_list",
+            "gateway"
+          ],
+          "exec": {
+            "security": "allowlist",
+            "ask": "off",
+            "pathPrepend": ["/data/npm/bin"],
+            "safeBins": ["jq", "head", "tail", "wc", "cut", "tr", "grep", "sort", "cat"],
+            "safeBinProfiles": {
+              "jq": {
+                "maxPositional": 1,
+                "allowedValueFlags": ["--arg", "--argjson", "--argstr"],
+                "deniedFlags": ["--argfile", "--rawfile", "--slurpfile", "--from-file", "--library-path", "-L", "-f"]
+              },
+              "grep": {
+                "maxPositional": 0,
+                "allowedValueFlags": ["--regexp", "--max-count", "--after-context", "--before-context", "--context", "-e", "-m", "-A", "-B", "-C"],
+                "deniedFlags": ["--file", "--exclude-from", "--recursive", "-f", "-r", "-R"]
+              }
+            }
+          }
+        }
+      },
+
+      {
+        "id": "nikin-content",
+        "name": "Content Specialist",
+        "model": "anthropic/claude-sonnet-4-6",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-content"
+      },
+      {
+        "id": "nikin-sustainability",
+        "name": "Sustainability Expert",
+        "model": "anthropic/claude-sonnet-4-6",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-sustainability"
+      },
+      {
+        "id": "nikin-analytics",
+        "name": "Data Analyst",
+        "model": "anthropic/claude-haiku-4-5",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-analytics"
+      },
+      {
+        "id": "nikin-ops",
+        "name": "Operations",
+        "model": "anthropic/claude-haiku-4-5",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-ops"
+      },
+      {
+        "id": "nikin-support",
+        "name": "Support Knowledge",
+        "model": "anthropic/claude-haiku-4-5",
+        "workspace": "${OPENCLAW_WORKSPACE_DIR}/nikin-support"
+      }
+    ]
+  },
+
+  // ─── Channels ───────────────────────────────────────────────────────────────
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "webhookSecret": "${TELEGRAM_WEBHOOK_SECRET}",
+      "streaming": "off",
+      "reactionLevel": "ack",
+      "dmPolicy": "allowlist",
+      "allowFrom": ["${TELEGRAM_NICHOLAS_CHAT_ID}"],
+      "retry": {
+        "attempts": 3,
+        "minDelayMs": 400,
+        "maxDelayMs": 30000,
+        "jitter": 0.1
+      }
+    }
+  },
+
+  // ─── Tools ──────────────────────────────────────────────────────────────────
+  "tools": {
+    "subagents": {
+      "tools": {
+        "allow": [
+          "read",
+          "write",
+          "web_fetch",
+          "web_search",
+          "connectos_daily_briefing"
+        ]
+      }
+    }
+  },
+
+  // ─── Bindings ───────────────────────────────────────────────────────────────
+  "bindings": [
+    {
+      "agentId": "nikin-assistant",
+      "match": {
+        "channel": "telegram"
+      }
+    }
+  ],
+
+  // ─── Cron ───────────────────────────────────────────────────────────────────
+  "cron": [
+    {
+      "id": "morning-briefing",
+      "schedule": "0 6 * * *",
+      "timezone": "Europe/Zurich",
+      "description": "Daily morning briefing at 06:00 CET — delivers ConnectOS summary to Nicholas via Telegram.",
+      "action": {
+        "type": "agentTurn",
+        "agentId": "nikin-assistant",
+        "message": "Run the daily morning briefing. Follow skills/connectos-briefing.md to fetch data from ConnectOS, format the briefing, and deliver it.",
+        "delivery": "announce"
+      }
+    }
+  ]
+}
