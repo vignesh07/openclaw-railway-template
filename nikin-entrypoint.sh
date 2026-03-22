@@ -11,12 +11,12 @@
 #   CONNECTOS_URL, CONNECTOS_TOKEN
 #
 # Injected by railway.toml:
-#   OPENCLAW_STATE_DIR    — /data/.clawdbot (persistent volume)
+#   OPENCLAW_STATE_DIR    — /data/.openclaw (persistent volume)
 #   OPENCLAW_WORKSPACE_DIR — /data/workspace (persistent volume)
 
 set -e
 
-STATE_DIR="${OPENCLAW_STATE_DIR:-${CLAWDBOT_STATE_DIR:-/data/.clawdbot}}"
+STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
 WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-/data/workspace}"
 INIT_DIR="/etc/nikin-config"
 
