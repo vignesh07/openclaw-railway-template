@@ -14,6 +14,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web app so u
 
 - The container runs a wrapper web server.
 - The wrapper protects `/setup` (and the Control UI at `/openclaw`) with `SETUP_PASSWORD` using HTTP Basic auth.
+- The wrapper also mounts a full VibeTunnel terminal at `/vibetunnel`; HTTP access uses the same Basic auth, and the wrapper issues a short-lived HTTP-only cookie so VibeTunnel WebSocket upgrades stay protected too.
 - The `/setup` app is a Next.js control surface backed by a small SQLite database stored in the persistent state directory.
 - During setup, the wrapper can still run `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
 - After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
@@ -47,6 +48,7 @@ Notes:
 Then:
 - Visit `https://<your-app>.up.railway.app/setup`
   - Your browser will prompt for **HTTP Basic auth**. Use any username; the password is `SETUP_PASSWORD`.
+- The embedded terminal in `/setup` is powered by `/vibetunnel`, so terminal access stays behind the same wrapper auth instead of using a separate VibeTunnel login.
 - Complete setup
 - Visit `https://<your-app>.up.railway.app/` and `/openclaw` (same Basic auth)
 
@@ -143,6 +145,15 @@ Checklist:
   - `OPENCLAW_WORKSPACE_DIR=/data/workspace`
 - Ensure **Public Networking** is enabled (Railway will inject `PORT`).
 - Check Railway logs for the wrapper error: it will show `Gateway not ready:` with the reason.
+
+### VibeTunnel session fails locally with "Socket path too long"
+
+VibeTunnel uses Unix sockets under the state directory. On macOS, very long temp paths can exceed the socket-path limit even when the wrapper integration is correct.
+
+Fix:
+- Use a short local state path such as `/tmp/ocstate`
+- Use a short workspace path such as `/tmp/ocworkspace`
+- On Railway, prefer the normal `/data/.openclaw` and `/data/workspace` paths
 
 ### Legacy CLAWDBOT_* env vars / multiple state directories
 

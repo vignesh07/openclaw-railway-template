@@ -91,6 +91,8 @@ const VIBETUNNEL_ENTRY = process.env.VIBETUNNEL_ENTRY?.trim() || path.join(proce
 const VIBETUNNEL_PUBLIC_DIR = path.join(process.cwd(), "node_modules", "vibetunnel", "public");
 const VIBETUNNEL_INDEX_HTML_PATH = path.join(VIBETUNNEL_PUBLIC_DIR, "index.html");
 const VIBETUNNEL_CLIENT_BUNDLE_PATH = path.join(VIBETUNNEL_PUBLIC_DIR, "bundle", "client-bundle.js");
+const VIBETUNNEL_ACCESS_COOKIE = "openclaw_vt_access";
+const VIBETUNNEL_ACCESS_TTL_MS = 60 * 60 * 1000;
 
 // Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
@@ -480,6 +482,75 @@ function requireSetupAuth(req, res, next) {
     return res.status(401).send("Invalid password");
   }
   return next();
+}
+
+function parseCookieHeader(header) {
+  return String(header || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex === -1) {
+        return cookies;
+      }
+
+      const key = part.slice(0, separatorIndex).trim();
+      const value = part.slice(separatorIndex + 1).trim();
+      if (key) {
+        cookies[key] = decodeURIComponent(value);
+      }
+      return cookies;
+    }, {});
+}
+
+function signVibeTunnelAccess(expiresAt) {
+  return crypto.createHmac("sha256", OPENCLAW_GATEWAY_TOKEN).update(String(expiresAt)).digest("hex");
+}
+
+function createVibeTunnelAccessCookieValue() {
+  const expiresAt = Date.now() + VIBETUNNEL_ACCESS_TTL_MS;
+  return `${expiresAt}.${signVibeTunnelAccess(expiresAt)}`;
+}
+
+function hasValidVibeTunnelAccess(req) {
+  const cookies = parseCookieHeader(req?.headers?.cookie);
+  const rawValue = cookies[VIBETUNNEL_ACCESS_COOKIE];
+  if (!rawValue) {
+    return false;
+  }
+
+  const [expiresAtRaw, signature] = rawValue.split(".", 2);
+  const expiresAt = Number.parseInt(expiresAtRaw || "", 10);
+  if (!Number.isFinite(expiresAt) || !signature || expiresAt <= Date.now()) {
+    return false;
+  }
+
+  const expectedSignature = signVibeTunnelAccess(expiresAt);
+  const provided = Buffer.from(signature, "utf8");
+  const expected = Buffer.from(expectedSignature, "utf8");
+  if (provided.length !== expected.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(provided, expected);
+}
+
+function attachVibeTunnelAccessCookie(req, res) {
+  const secure = req.headers["x-forwarded-proto"] === "https" || req.secure;
+  const cookie = [
+    `${VIBETUNNEL_ACCESS_COOKIE}=${encodeURIComponent(createVibeTunnelAccessCookieValue())}`,
+    `Max-Age=${Math.floor(VIBETUNNEL_ACCESS_TTL_MS / 1000)}`,
+    `Path=${VIBETUNNEL_BASE_PATH}`,
+    "HttpOnly",
+    "SameSite=Strict",
+  ];
+
+  if (secure) {
+    cookie.push("Secure");
+  }
+
+  res.setHeader("Set-Cookie", cookie.join("; "))
 }
 
 const app = express();
@@ -1335,7 +1406,9 @@ function sendPatchedVibeTunnelBundle(res) {
   res.type("application/javascript").send(buildVibeTunnelPatchedClientBundle());
 }
 
-app.use(VIBETUNNEL_BASE_PATH, requireDashboardAuth, async (req, res, nextMiddleware) => {
+app.use(VIBETUNNEL_BASE_PATH, requireSetupAuth, async (req, res, nextMiddleware) => {
+  attachVibeTunnelAccessCookie(req, res);
+
   try {
     await ensureVibeTunnelRunning();
   } catch (error) {
@@ -1553,6 +1626,12 @@ server.on("upgrade", async (req, socket, head) => {
   // The gateway authenticates at the protocol layer and we inject the gateway token below.
 
   if (req.url?.startsWith(`${VIBETUNNEL_BASE_PATH}/buffers`) || req.url?.startsWith(`${VIBETUNNEL_BASE_PATH}/ws/`)) {
+    if (!SETUP_PASSWORD || !hasValidVibeTunnelAccess(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     try {
       await ensureVibeTunnelRunning();
     } catch {
@@ -1581,19 +1660,13 @@ server.on("upgrade", async (req, socket, head) => {
 });
 
 process.on("SIGTERM", () => {
-  // Best-effort shutdown
-  try {
-    if (gatewayProc) gatewayProc.kill("SIGTERM");
-  } catch {
-    // ignore
-  }
-
-  // Stop accepting new connections; allow in-flight requests to complete briefly.
-  try {
-    server.close(() => process.exit(0));
-  } catch {
-    process.exit(0);
-  }
+  Promise.allSettled([stopGateway(), stopVibeTunnel()]).finally(() => {
+    try {
+      server.close(() => process.exit(0));
+    } catch {
+      process.exit(0);
+    }
+  });
 
   setTimeout(() => process.exit(0), 5_000).unref?.();
 });

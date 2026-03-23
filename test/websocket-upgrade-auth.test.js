@@ -2,15 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-test("ws upgrade handler does not enforce Basic auth (browsers can't send headers)", () => {
+test("gateway ws upgrade still avoids Basic auth checks while vibetunnel ws requires wrapper-issued access", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   const idx = src.indexOf('server.on("upgrade"');
   assert.ok(idx >= 0);
-  const window = src.slice(idx, idx + 700);
+  const window = src.slice(idx, idx + 1200);
 
-  // Regression guard for issue #162: do not destroy browser websocket connections
-  // due to missing Authorization: Basic.
   assert.doesNotMatch(window, /WebSocket password protection/);
   assert.doesNotMatch(window, /scheme === "Basic"/);
   assert.doesNotMatch(window, /WWW-Authenticate/);
+  assert.match(window, /if \(!SETUP_PASSWORD \|\| !hasValidVibeTunnelAccess\(req\)\)/);
+  assert.match(window, /HTTP\/1\.1 401 Unauthorized/);
 });
