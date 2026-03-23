@@ -145,6 +145,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
   && chmod +x /usr/local/bin/openclaw
 
 WORKDIR /agency-agents
+RUN ./scripts/convert.sh --tool openclaw --no-interactive
 RUN ./scripts/install.sh --tool openclaw --no-interactive
 
 WORKDIR /app
