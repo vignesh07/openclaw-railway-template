@@ -2,25 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-test("setup dashboard uses live terminal session endpoints and stdin controls", () => {
+test("setup dashboard embeds vibetunnel and removes the old command runner controls", () => {
   const src = fs.readFileSync(new URL("../components/setup/setup-dashboard.jsx", import.meta.url), "utf8");
 
-  assert.match(src, /"\/setup\/api\/terminal\/session"/);
-  assert.match(src, /`\/setup\/api\/terminal\/session\/\$\{activeSessionId\}\/input`/);
-  assert.match(src, /`\/setup\/api\/terminal\/session\/\$\{activeSessionId\}\/terminate`/);
-  assert.match(src, /sessionRequestInFlightRef/);
-  assert.match(src, /terminalCursorRef/);
-  assert.match(src, /You can run custom/);
-  assert.match(src, /live OpenClaw state/);
-  assert.match(src, /Send input/);
-  assert.match(src, /Send EOF/);
-  assert.match(src, /Stop command/);
+  assert.match(src, /src="\/vibetunnel"/);
+  assert.match(src, /Open full screen/);
+  assert.match(src, /full VibeTunnel remote terminal/);
+  assert.doesNotMatch(src, /"\/setup\/api\/terminal/);
+  assert.doesNotMatch(src, /Send input/);
+  assert.doesNotMatch(src, /Send EOF/);
+  assert.doesNotMatch(src, /Stop command/);
 });
 
-test("setup dashboard places status cards above the activity terminal", () => {
+test("setup dashboard places status cards above the remote terminal surface", () => {
   const src = fs.readFileSync(new URL("../components/setup/setup-dashboard.jsx", import.meta.url), "utf8");
 
   assert.match(src, /<div className="grid gap-4 sm:grid-cols-2">/);
-  assert.ok(src.indexOf("<CardTitle>Wrapper status</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Activity terminal</CardTitle>'));
-  assert.ok(src.indexOf("<CardTitle>App info</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Activity terminal</CardTitle>'));
+  assert.ok(src.indexOf("<CardTitle>Wrapper status</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Remote terminal</CardTitle>'));
+  assert.ok(src.indexOf("<CardTitle>App info</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Remote terminal</CardTitle>'));
 });

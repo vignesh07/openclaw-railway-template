@@ -9,7 +9,7 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
-import { appendSetupEvent, getSetupDbPath, listSetupEvents } from "../lib/setup-store.js";
+import { appendSetupEvent, getSetupDbPath } from "../lib/setup-store.js";
 
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
 // keep working. Users should update their Railway Variables to use the new names.
@@ -81,6 +81,17 @@ const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT 
 const INTERNAL_GATEWAY_HOST = process.env.INTERNAL_GATEWAY_HOST ?? "127.0.0.1";
 const GATEWAY_TARGET = `http://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}`;
 
+const INTERNAL_VIBETUNNEL_PORT = Number.parseInt(process.env.INTERNAL_VIBETUNNEL_PORT ?? "4020", 10);
+const INTERNAL_VIBETUNNEL_HOST = process.env.INTERNAL_VIBETUNNEL_HOST ?? "127.0.0.1";
+const VIBETUNNEL_TARGET = `http://${INTERNAL_VIBETUNNEL_HOST}:${INTERNAL_VIBETUNNEL_PORT}`;
+const VIBETUNNEL_BASE_PATH = "/vibetunnel";
+const VIBETUNNEL_CONTROL_DIR = process.env.VIBETUNNEL_CONTROL_DIR?.trim() || path.join(STATE_DIR, "vibetunnel");
+const VIBETUNNEL_NODE = process.env.VIBETUNNEL_NODE?.trim() || process.execPath;
+const VIBETUNNEL_ENTRY = process.env.VIBETUNNEL_ENTRY?.trim() || path.join(process.cwd(), "node_modules", "vibetunnel", "dist", "cli.js");
+const VIBETUNNEL_PUBLIC_DIR = path.join(process.cwd(), "node_modules", "vibetunnel", "public");
+const VIBETUNNEL_INDEX_HTML_PATH = path.join(VIBETUNNEL_PUBLIC_DIR, "index.html");
+const VIBETUNNEL_CLIENT_BUNDLE_PATH = path.join(VIBETUNNEL_PUBLIC_DIR, "bundle", "client-bundle.js");
+
 // Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
@@ -142,6 +153,8 @@ function isConfigured() {
 
 let gatewayProc = null;
 let gatewayStarting = null;
+let vibetunnelProc = null;
+let vibetunnelStarting = null;
 
 // Debug breadcrumbs for common Railway failures (502 / "Application failed to respond").
 let lastGatewayError = null;
@@ -268,6 +281,181 @@ async function restartGateway() {
     await stopGateway();
   }
   return ensureGatewayRunning();
+}
+
+function buildVibeTunnelPatchedIndex() {
+  const html = fs.readFileSync(VIBETUNNEL_INDEX_HTML_PATH, "utf8");
+  return html
+    .replaceAll('href="/', `href="${VIBETUNNEL_BASE_PATH}/`)
+    .replaceAll('src="/', `src="${VIBETUNNEL_BASE_PATH}/`);
+}
+
+function buildVibeTunnelPatchedClientBundle() {
+  const source = fs.readFileSync(VIBETUNNEL_CLIENT_BUNDLE_PATH, "utf8");
+  const replacements = [
+    ["\"/api", `\"${VIBETUNNEL_BASE_PATH}/api`],
+    ["'/api", `'${VIBETUNNEL_BASE_PATH}/api`],
+    ["`/api", `\`${VIBETUNNEL_BASE_PATH}/api`],
+    ["\"/buffers", `\"${VIBETUNNEL_BASE_PATH}/buffers`],
+    ["'/buffers", `'${VIBETUNNEL_BASE_PATH}/buffers`],
+    ["`/buffers", `\`${VIBETUNNEL_BASE_PATH}/buffers`],
+    ["\"/ws/input", `\"${VIBETUNNEL_BASE_PATH}/ws/input`],
+    ["'/ws/input", `'${VIBETUNNEL_BASE_PATH}/ws/input`],
+    ["`/ws/input", `\`${VIBETUNNEL_BASE_PATH}/ws/input`],
+    ["\"/session/", `\"${VIBETUNNEL_BASE_PATH}/session/`],
+    ["'/session/", `'${VIBETUNNEL_BASE_PATH}/session/`],
+    ["`/session/", `\`${VIBETUNNEL_BASE_PATH}/session/`],
+    ["\"/worktrees", `\"${VIBETUNNEL_BASE_PATH}/worktrees`],
+    ["'/worktrees", `'${VIBETUNNEL_BASE_PATH}/worktrees`],
+    ["`/worktrees", `\`${VIBETUNNEL_BASE_PATH}/worktrees`],
+    ["\"/file-browser", `\"${VIBETUNNEL_BASE_PATH}/file-browser`],
+    ["'/file-browser", `'${VIBETUNNEL_BASE_PATH}/file-browser`],
+    ["`/file-browser", `\`${VIBETUNNEL_BASE_PATH}/file-browser`],
+    ["\"/logs", `\"${VIBETUNNEL_BASE_PATH}/logs`],
+    ["'/logs", `'${VIBETUNNEL_BASE_PATH}/logs`],
+    ["\"/monaco-editor/", `\"${VIBETUNNEL_BASE_PATH}/monaco-editor/`],
+    ["'/monaco-editor/", `'${VIBETUNNEL_BASE_PATH}/monaco-editor/`],
+    ["\"/apple-touch-icon.png", `\"${VIBETUNNEL_BASE_PATH}/apple-touch-icon.png`],
+    ["\"/favicon.ico", `\"${VIBETUNNEL_BASE_PATH}/favicon.ico`],
+    ["\"/favicon-32.png", `\"${VIBETUNNEL_BASE_PATH}/favicon-32.png`],
+    ["\"/favicon-16.png", `\"${VIBETUNNEL_BASE_PATH}/favicon-16.png`],
+    ["\"/manifest.json", `\"${VIBETUNNEL_BASE_PATH}/manifest.json`],
+  ];
+
+  return replacements.reduce((output, [needle, replacement]) => output.replaceAll(needle, replacement), source);
+}
+
+function prepareVibeTunnelProxyRequest(req) {
+  delete req.headers.authorization;
+  delete req.headers["x-forwarded-for"];
+  delete req.headers["x-forwarded-host"];
+  delete req.headers["x-forwarded-proto"];
+  delete req.headers["x-real-ip"];
+}
+
+async function waitForVibeTunnelReady(opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 20_000;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await fetch(`${VIBETUNNEL_TARGET}/api/auth/config`, { method: "GET" });
+      if (response.ok) {
+        return true;
+      }
+    } catch (error) {
+      if (Date.now() - start >= timeoutMs) {
+        throw error;
+      }
+    }
+    await sleep(250);
+  }
+  return false;
+}
+
+async function startVibeTunnel() {
+  if (vibetunnelProc) return;
+
+  fs.mkdirSync(VIBETUNNEL_CONTROL_DIR, { recursive: true });
+
+  vibetunnelProc = childProcess.spawn(
+    VIBETUNNEL_NODE,
+    [
+      VIBETUNNEL_ENTRY,
+      "--bind",
+      INTERNAL_VIBETUNNEL_HOST,
+      "--port",
+      String(INTERNAL_VIBETUNNEL_PORT),
+      "--no-auth",
+      "--no-mdns",
+    ],
+    {
+      env: {
+        ...process.env,
+        VIBETUNNEL_CONTROL_DIR,
+      },
+      stdio: "inherit",
+    },
+  );
+
+  vibetunnelProc.on("error", (err) => {
+    console.error(`[vibetunnel] spawn error: ${String(err)}`);
+    vibetunnelProc = null;
+  });
+
+  vibetunnelProc.on("exit", (code, signal) => {
+    console.error(`[vibetunnel] exited code=${code} signal=${signal}`);
+    vibetunnelProc = null;
+  });
+}
+
+async function ensureVibeTunnelRunning() {
+  if (vibetunnelProc) return { ok: true };
+  if (!vibetunnelStarting) {
+    vibetunnelStarting = (async () => {
+      await startVibeTunnel();
+      const ready = await waitForVibeTunnelReady({ timeoutMs: 20_000 });
+      if (!ready) {
+        throw new Error("VibeTunnel did not become ready in time");
+      }
+    })().finally(() => {
+      vibetunnelStarting = null;
+    });
+  }
+  await vibetunnelStarting;
+  return { ok: true };
+}
+
+async function stopVibeTunnel({ timeoutMs = 5_000 } = {}) {
+  const proc = vibetunnelProc;
+  if (!proc) {
+    return { ok: true };
+  }
+
+  const exited = await new Promise((resolve) => {
+    let settled = false;
+    let hardKillTimer;
+
+    const finish = (ok) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      proc.off("exit", handleExit);
+      if (hardKillTimer) {
+        clearTimeout(hardKillTimer);
+      }
+      resolve(ok);
+    };
+
+    const handleExit = () => finish(true);
+    proc.once("exit", handleExit);
+
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      finish(false);
+      return;
+    }
+
+    hardKillTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        finish(false);
+        return;
+      }
+
+      setTimeout(() => {
+        finish(proc.exitCode !== null);
+      }, 1_500);
+    }, timeoutMs);
+  });
+
+  if (!exited) {
+    throw new Error("VibeTunnel did not stop cleanly in time");
+  }
+
+  return { ok: true };
 }
 
 function requireSetupAuth(req, res, next) {
@@ -413,10 +601,6 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     authGroups: AUTH_GROUPS,
     setupDbPath: getSetupDbPath(),
   });
-});
-
-app.get("/setup/api/terminal", requireSetupAuth, (_req, res) => {
-  res.json({ ok: true, dbPath: getSetupDbPath(), events: listSetupEvents() });
 });
 
 app.get("/setup/api/auth-groups", requireSetupAuth, (_req, res) => {
@@ -816,345 +1000,6 @@ function extractDeviceRequestIds(text) {
   return Array.from(out);
 }
 
-const TERMINAL_SESSION_TTL_MS = 15 * 60 * 1000;
-const TERMINAL_SESSION_MAX_BUFFER = 160_000;
-const TERMINAL_SESSION_LIMIT = 6;
-const terminalSessions = new Map();
-
-function pruneTerminalSessions() {
-  const now = Date.now();
-
-  for (const [sessionId, session] of terminalSessions.entries()) {
-    const activityAt = session.status === "running" || session.status === "starting" || session.status === "terminating"
-      ? session.lastAccessedAt || session.updatedAt || session.createdAt
-      : session.endedAt || session.updatedAt || session.createdAt;
-    const ageMs = now - new Date(activityAt).getTime();
-    if (ageMs <= TERMINAL_SESSION_TTL_MS) {
-      continue;
-    }
-
-    if (session.proc && (session.status === "running" || session.status === "starting" || session.status === "terminating")) {
-      session.status = "terminating";
-      try {
-        session.proc.kill(session.cleanupRequestedAt ? "SIGKILL" : "SIGTERM");
-        session.cleanupRequestedAt = new Date().toISOString();
-      } catch {
-        // ignore
-      }
-
-      continue;
-    }
-
-    terminalSessions.delete(sessionId);
-  }
-}
-
-function createTerminalSession(commandLine) {
-  pruneTerminalSessions();
-
-  const runningCount = Array.from(terminalSessions.values()).filter((session) => session.status === "running").length;
-  if (runningCount >= TERMINAL_SESSION_LIMIT) {
-    throw new Error("Terminal busy: too many active sessions. Wait for an existing command to finish.");
-  }
-
-  const createdAt = new Date().toISOString();
-  const session = {
-    id: crypto.randomUUID(),
-    commandLine,
-    status: "starting",
-    createdAt,
-    lastAccessedAt: createdAt,
-    updatedAt: createdAt,
-    startedAt: createdAt,
-    endedAt: null,
-    exitCode: null,
-    signal: null,
-    buffer: "",
-    totalChars: 0,
-    trimmedChars: 0,
-    cleanupRequestedAt: null,
-    proc: null,
-  };
-
-  terminalSessions.set(session.id, session);
-  return session;
-}
-
-function appendTerminalSessionOutput(session, chunk) {
-  const text = redactSecrets(String(chunk || "").replace(/\r\n/g, "\n"));
-  if (!text) {
-    return;
-  }
-
-  session.buffer += text;
-  session.totalChars += text.length;
-  session.updatedAt = new Date().toISOString();
-
-  if (session.buffer.length > TERMINAL_SESSION_MAX_BUFFER) {
-    const overflow = session.buffer.length - TERMINAL_SESSION_MAX_BUFFER;
-    session.buffer = session.buffer.slice(overflow);
-    session.trimmedChars += overflow;
-  }
-}
-
-function touchTerminalSession(session) {
-  session.lastAccessedAt = new Date().toISOString();
-}
-
-function finishTerminalSession(session, details = {}) {
-  if (session.endedAt) {
-    return;
-  }
-
-  session.status = details.status || "exited";
-  session.exitCode = Number.isInteger(details.exitCode) ? details.exitCode : session.exitCode;
-  session.signal = details.signal ?? session.signal ?? null;
-  session.endedAt = new Date().toISOString();
-  session.updatedAt = session.endedAt;
-  session.proc = null;
-  session.cleanupRequestedAt = null;
-  touchTerminalSession(session);
-
-  const summary = [];
-  if (session.status === "failed" && details.error) {
-    summary.push(`[terminal] ${String(details.error)}`);
-  }
-  if (session.signal) {
-    summary.push(`[terminal] process terminated by ${session.signal}`);
-  } else if (Number.isInteger(session.exitCode)) {
-    summary.push(`[terminal] process exited with code ${session.exitCode}`);
-  }
-  if (summary.length) {
-    appendTerminalSessionOutput(session, `\n${summary.join("\n")}\n`);
-  }
-
-  logSetupEvent(
-    "console",
-    `$ ${session.commandLine}`,
-    [
-      `status: ${session.status}`,
-      Number.isInteger(session.exitCode) ? `exit code: ${session.exitCode}` : null,
-      session.signal ? `signal: ${session.signal}` : null,
-      `captured chars: ${session.totalChars}`,
-      session.trimmedChars ? `trimmed chars: ${session.trimmedChars}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  );
-}
-
-function getTerminalSession(sessionId) {
-  pruneTerminalSessions();
-  const session = terminalSessions.get(sessionId) || null;
-  if (session) {
-    touchTerminalSession(session);
-  }
-  return session;
-}
-
-function buildTerminalSessionResponse(session, cursorValue) {
-  const rawCursor = Number.parseInt(String(cursorValue ?? "0"), 10);
-  const cursor = Number.isFinite(rawCursor) && rawCursor > 0 ? rawCursor : 0;
-  const safeCursor = Math.max(cursor, session.trimmedChars);
-  const offset = Math.max(0, safeCursor - session.trimmedChars);
-  const nextCursor = session.trimmedChars + session.buffer.length;
-
-  return {
-    ok: true,
-    session: {
-      id: session.id,
-      commandLine: session.commandLine,
-      status: session.status,
-      createdAt: session.createdAt,
-      startedAt: session.startedAt,
-      lastAccessedAt: session.lastAccessedAt,
-      updatedAt: session.updatedAt,
-      endedAt: session.endedAt,
-      cleanupRequestedAt: session.cleanupRequestedAt,
-      exitCode: session.exitCode,
-      signal: session.signal,
-      canAcceptInput: Boolean(session.proc?.stdin) && session.status === "running" && !session.proc.stdin.destroyed,
-    },
-    output: session.buffer.slice(offset),
-    cursor: safeCursor,
-    nextCursor,
-    trimmedToCursor: session.trimmedChars,
-  };
-}
-
-function tokenizeCommandLine(input) {
-  const source = String(input || "").trim();
-  if (!source) {
-    throw new Error("Missing command");
-  }
-
-  const tokens = [];
-  let current = "";
-  let quote = "";
-  let escaped = false;
-
-  for (const char of source) {
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (quote) {
-      if (char === quote) {
-        quote = "";
-      } else {
-        current += char;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (escaped) {
-    throw new Error("Command cannot end with a trailing backslash");
-  }
-  if (quote) {
-    throw new Error("Command contains an unterminated quote");
-  }
-  if (current) {
-    tokens.push(current);
-  }
-  if (!tokens.length) {
-    throw new Error("Missing command");
-  }
-
-  return tokens;
-}
-
-function validateTerminalToken(value, label) {
-  if (!/^[A-Za-z0-9._:-]+$/.test(value)) {
-    throw new Error(`Invalid ${label}`);
-  }
-}
-
-function validateInteractiveOpenClawArg(value, label) {
-  if (!value) {
-    throw new Error(`Missing ${label}`);
-  }
-
-  if (/[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error(`Invalid ${label}`);
-  }
-}
-
-function sanitizeTerminalCommandLine(argv) {
-  const sensitiveFlagPattern = /token|secret|pass(word)?|key/i;
-  const tokens = [...argv];
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    const [flagName, inlineValue] = token.split("=", 2);
-
-    if (flagName?.startsWith("--") && sensitiveFlagPattern.test(flagName)) {
-      if (inlineValue !== undefined) {
-        tokens[index] = `${flagName}=[REDACTED]`;
-      } else if (index + 1 < tokens.length) {
-        tokens[index + 1] = "[REDACTED]";
-      }
-    }
-  }
-
-  if (tokens[0] === "openclaw" && tokens[1] === "config" && tokens[2] === "set" && tokens.length >= 5) {
-    tokens[4] = "[REDACTED]";
-  }
-
-  return redactSecrets(tokens.join(" "));
-}
-
-function ensureAllowedInteractiveOpenClawArgs(args) {
-  if (!args.length) {
-    throw new Error("Missing OpenClaw subcommand");
-  }
-
-  const [subcommand, ...rest] = args;
-
-  if (subcommand === "gateway") {
-    throw new Error("`openclaw gateway ...` is blocked here because the wrapper manages the gateway lifecycle.");
-  }
-
-  validateInteractiveOpenClawArg(subcommand, "OpenClaw subcommand");
-  rest.forEach((arg, index) => {
-    validateInteractiveOpenClawArg(arg, `argument ${index + 1}`);
-  });
-
-  return;
-}
-
-function parseInteractiveTerminalCommand(commandLine) {
-  const argv = tokenizeCommandLine(commandLine);
-  const [program, ...args] = argv;
-
-  if (program === "openclaw") {
-    ensureAllowedInteractiveOpenClawArgs(args);
-
-    return {
-      kind: "spawn",
-      commandLine: sanitizeTerminalCommandLine(argv),
-      cmd: OPENCLAW_NODE,
-      args: clawArgs(args),
-    };
-  }
-
-  if (["gateway.start", "gateway.stop", "gateway.restart"].includes(program)) {
-    if (args.length) {
-      throw new Error(`${program} does not accept arguments`);
-    }
-
-    return {
-      kind: "gateway",
-      commandLine: program,
-      action: program,
-    };
-  }
-
-  throw new Error("Only `openclaw ...` commands and `gateway.{start|stop|restart}` are allowed in the setup terminal.");
-}
-
-async function runGatewayTerminalAction(action) {
-  if (action === "gateway.restart") {
-    await restartGateway();
-    return { ok: true, output: "Gateway restarted (wrapper-managed).\n" };
-  }
-  if (action === "gateway.stop") {
-    await stopGateway();
-    return { ok: true, output: "Gateway stopped (wrapper-managed).\n" };
-  }
-  if (action === "gateway.start") {
-    const result = await ensureGatewayRunning();
-    return {
-      ok: Boolean(result.ok),
-      output: result.ok ? "Gateway started.\n" : `Gateway not started: ${result.reason}\n`,
-    };
-  }
-
-  throw new Error(`Unsupported gateway action: ${action}`);
-}
-
 async function stopGateway({ timeoutMs = 5_000 } = {}) {
   const proc = gatewayProc;
   if (!proc) {
@@ -1207,268 +1052,6 @@ async function stopGateway({ timeoutMs = 5_000 } = {}) {
 
   return { ok: true };
 }
-
-app.post("/setup/api/terminal/session", requireSetupAuth, async (req, res) => {
-  const commandLine = String(req.body?.commandLine || "").trim();
-
-  let command;
-  try {
-    command = parseInteractiveTerminalCommand(commandLine);
-  } catch (error) {
-    return res.status(400).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  }
-
-  let session;
-  try {
-    session = createTerminalSession(command.commandLine);
-  } catch (error) {
-    return res.status(409).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  }
-
-  appendTerminalSessionOutput(session, `$ ${command.commandLine}\n`);
-
-  if (command.kind === "gateway") {
-    session.status = "running";
-    try {
-      const result = await runGatewayTerminalAction(command.action);
-      appendTerminalSessionOutput(session, result.output);
-      finishTerminalSession(session, { status: result.ok ? "exited" : "failed", exitCode: result.ok ? 0 : 1 });
-      return res.status(result.ok ? 201 : 500).json(buildTerminalSessionResponse(session, 0));
-    } catch (error) {
-      finishTerminalSession(session, {
-        status: "failed",
-        exitCode: 1,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return res.status(500).json(buildTerminalSessionResponse(session, 0));
-    }
-  }
-
-  try {
-    const proc = childProcess.spawn(command.cmd, command.args, {
-      cwd: WORKSPACE_DIR,
-      env: {
-        ...process.env,
-        OPENCLAW_STATE_DIR: STATE_DIR,
-        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    session.proc = proc;
-    session.status = "running";
-
-    proc.stdout?.on("data", (chunk) => {
-      appendTerminalSessionOutput(session, chunk);
-    });
-
-    proc.stderr?.on("data", (chunk) => {
-      appendTerminalSessionOutput(session, chunk);
-    });
-
-    proc.on("error", (error) => {
-      finishTerminalSession(session, {
-        status: "failed",
-        exitCode: 127,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-
-    proc.on("close", (code, signal) => {
-      finishTerminalSession(session, {
-        status: code === 0 ? "exited" : "failed",
-        exitCode: typeof code === "number" ? code : 0,
-        signal,
-      });
-    });
-
-    return res.status(201).json(buildTerminalSessionResponse(session, 0));
-  } catch (error) {
-    finishTerminalSession(session, {
-      status: "failed",
-      exitCode: 127,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return res.status(500).json(buildTerminalSessionResponse(session, 0));
-  }
-});
-
-app.get("/setup/api/terminal/session/:sessionId", requireSetupAuth, (req, res) => {
-  const session = getTerminalSession(req.params.sessionId);
-
-  if (!session) {
-    return res.status(404).json({ ok: false, error: "Terminal session not found" });
-  }
-
-  return res.json(buildTerminalSessionResponse(session, req.query.cursor));
-});
-
-app.post("/setup/api/terminal/session/:sessionId/input", requireSetupAuth, (req, res) => {
-  const session = getTerminalSession(req.params.sessionId);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: "Terminal session not found" });
-  }
-  if (session.status !== "running" || !session.proc?.stdin || session.proc.stdin.destroyed) {
-    return res.status(409).json({ ok: false, error: "Terminal session is not accepting input" });
-  }
-
-  const hasInput = Object.prototype.hasOwnProperty.call(req.body || {}, "input");
-  const input = typeof req.body?.input === "string" ? req.body.input : "";
-  const addNewline = req.body?.addNewline !== false;
-  const endInput = Boolean(req.body?.endInput);
-
-  if (!hasInput && !endInput) {
-    return res.status(400).json({ ok: false, error: "Missing terminal input" });
-  }
-
-  try {
-    if (hasInput) {
-      session.proc.stdin.write(addNewline ? `${input}\n` : input, "utf8");
-      session.updatedAt = new Date().toISOString();
-    }
-    if (endInput) {
-      session.proc.stdin.end();
-      session.updatedAt = new Date().toISOString();
-    }
-    return res.json(buildTerminalSessionResponse(session, req.body?.cursor));
-  } catch (error) {
-    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.post("/setup/api/terminal/session/:sessionId/terminate", requireSetupAuth, (req, res) => {
-  const session = getTerminalSession(req.params.sessionId);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: "Terminal session not found" });
-  }
-  if (session.status !== "running" || !session.proc) {
-    return res.status(409).json({ ok: false, error: "Terminal session is not running" });
-  }
-
-  try {
-    session.proc.kill("SIGTERM");
-    session.updatedAt = new Date().toISOString();
-    return res.json({ ok: true });
-  } catch (error) {
-    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-const ALLOWED_CONSOLE_COMMANDS = new Set([
-  // Wrapper-managed lifecycle
-  "gateway.restart",
-  "gateway.stop",
-  "gateway.start",
-
-  // OpenClaw CLI helpers
-  "openclaw.version",
-  "openclaw.status",
-  "openclaw.health",
-  "openclaw.doctor",
-  "openclaw.logs.tail",
-  "openclaw.config.get",
-
-  // Device management (for fixing "disconnected (1008): pairing required")
-  "openclaw.devices.list",
-  "openclaw.devices.approve",
-
-  // Plugin management
-  "openclaw.plugins.list",
-  "openclaw.plugins.enable",
-]);
-
-app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
-  const payload = req.body || {};
-  const cmd = String(payload.cmd || "").trim();
-  const arg = String(payload.arg || "").trim();
-
-  if (!ALLOWED_CONSOLE_COMMANDS.has(cmd)) {
-    return res.status(400).json({ ok: false, error: "Command not allowed" });
-  }
-
-  try {
-    const logCommandResult = (statusCode, payload) => {
-      const output = redactSecrets(payload?.output || payload?.error || "");
-      logSetupEvent("console", `$ ${cmd}${arg ? ` ${arg}` : ""}`, output || `HTTP ${statusCode}`);
-      return res.status(statusCode).json({ ...payload, output });
-    };
-
-    if (cmd === "gateway.restart") {
-      await restartGateway();
-      return logCommandResult(200, { ok: true, output: "Gateway restarted (wrapper-managed).\n" });
-    }
-    if (cmd === "gateway.stop") {
-      await stopGateway();
-      return logCommandResult(200, { ok: true, output: "Gateway stopped (wrapper-managed).\n" });
-    }
-    if (cmd === "gateway.start") {
-      const r = await ensureGatewayRunning();
-      return logCommandResult(200, { ok: Boolean(r.ok), output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n` });
-    }
-
-    if (cmd === "openclaw.version") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.status") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["status"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.health") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["health"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.doctor") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.logs.tail") {
-      const lines = Math.max(50, Math.min(1000, Number.parseInt(arg || "200", 10) || 200));
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["logs", "--tail", String(lines)]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.config.get") {
-      if (!arg) return res.status(400).json({ ok: false, error: "Missing config path" });
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", arg]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-
-    // Device management commands (for fixing "disconnected (1008): pairing required")
-    if (cmd === "openclaw.devices.list") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "list"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.devices.approve") {
-      const requestId = String(arg || "").trim();
-      if (!requestId) {
-        return res.status(400).json({ ok: false, error: "Missing device request ID" });
-      }
-      if (!/^[A-Za-z0-9_-]+$/.test(requestId)) {
-        return res.status(400).json({ ok: false, error: "Invalid device request ID" });
-      }
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "approve", requestId]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-
-    // Plugin management commands
-    if (cmd === "openclaw.plugins.list") {
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["plugins", "list"]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-    if (cmd === "openclaw.plugins.enable") {
-      const name = String(arg || "").trim();
-      if (!name) return res.status(400).json({ ok: false, error: "Missing plugin name" });
-      if (!/^[A-Za-z0-9_-]+$/.test(name)) return res.status(400).json({ ok: false, error: "Invalid plugin name" });
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["plugins", "enable", name]));
-      return logCommandResult(r.code === 0 ? 200 : 500, { ok: r.code === 0, output: r.output });
-    }
-
-    return res.status(400).json({ ok: false, error: "Unhandled command" });
-  } catch (err) {
-    logSetupEvent("console", `$ ${cmd}${arg ? ` ${arg}` : ""}`, String(err));
-    return res.status(500).json({ ok: false, error: String(err) });
-  }
-});
 
 app.get("/setup/api/config/raw", requireSetupAuth, async (_req, res) => {
   try {
@@ -1700,6 +1283,99 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
 
 await nextApp.prepare();
 
+const vibetunnelProxy = httpProxy.createProxyServer({
+  target: VIBETUNNEL_TARGET,
+  ws: true,
+  xfwd: false,
+  changeOrigin: true,
+});
+
+vibetunnelProxy.on("error", (err, _req, res) => {
+  console.error("[vibetunnel-proxy]", err);
+  try {
+    if (res && typeof res.writeHead === "function" && !res.headersSent) {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end("VibeTunnel unavailable\n");
+    }
+  } catch (writeError) {
+    console.error("[vibetunnel-proxy-response]", writeError);
+  }
+});
+
+vibetunnelProxy.on("proxyReq", (proxyReq, req) => {
+  proxyReq.removeHeader("authorization");
+  proxyReq.removeHeader("x-forwarded-for");
+  proxyReq.removeHeader("x-forwarded-host");
+  proxyReq.removeHeader("x-forwarded-proto");
+  proxyReq.removeHeader("x-real-ip");
+
+  if (req.method === "GET" || req.method === "HEAD" || req.body == null) {
+    return;
+  }
+
+  const body = JSON.stringify(req.body);
+  proxyReq.setHeader("content-type", "application/json");
+  proxyReq.setHeader("content-length", Buffer.byteLength(body));
+  proxyReq.write(body);
+});
+
+vibetunnelProxy.on("proxyReqWs", (proxyReq) => {
+  proxyReq.removeHeader("authorization");
+  proxyReq.removeHeader("x-forwarded-for");
+  proxyReq.removeHeader("x-forwarded-host");
+  proxyReq.removeHeader("x-forwarded-proto");
+  proxyReq.removeHeader("x-real-ip");
+});
+
+function sendPatchedVibeTunnelIndex(res) {
+  res.type("html").send(buildVibeTunnelPatchedIndex());
+}
+
+function sendPatchedVibeTunnelBundle(res) {
+  res.type("application/javascript").send(buildVibeTunnelPatchedClientBundle());
+}
+
+app.use(VIBETUNNEL_BASE_PATH, requireDashboardAuth, async (req, res, nextMiddleware) => {
+  try {
+    await ensureVibeTunnelRunning();
+  } catch (error) {
+    return res.status(503).type("text/plain").send(`VibeTunnel unavailable\n${String(error)}`);
+  }
+
+  if (req.path === "/" || req.path.startsWith("/session/") || req.path === "/worktrees" || req.path === "/file-browser") {
+    return sendPatchedVibeTunnelIndex(res);
+  }
+
+  if (req.path === "/bundle/client-bundle.js") {
+    return sendPatchedVibeTunnelBundle(res);
+  }
+
+  if (
+    req.path.startsWith("/bundle/")
+    || req.path.startsWith("/monaco-editor/")
+    || req.path === "/manifest.json"
+    || req.path === "/favicon.ico"
+    || req.path === "/favicon-32.png"
+    || req.path === "/favicon-16.png"
+    || req.path === "/apple-touch-icon.png"
+  ) {
+    return res.sendFile(path.join(VIBETUNNEL_PUBLIC_DIR, req.path.replace(/^\//, "")));
+  }
+
+  if (
+    req.path.startsWith("/api/")
+    || req.path.startsWith("/auth")
+    || req.path.startsWith("/logs")
+    || req.path.startsWith("/push")
+  ) {
+    prepareVibeTunnelProxyRequest(req);
+    return vibetunnelProxy.web(req, res, { target: VIBETUNNEL_TARGET });
+  }
+
+  prepareVibeTunnelProxyRequest(req);
+  return vibetunnelProxy.web(req, res, { target: VIBETUNNEL_TARGET });
+});
+
 app.use(async (req, res, nextMiddleware) => {
   if (req.path === "/setup" || req.path.startsWith("/setup/")) {
     return requireSetupAuth(req, res, async () => {
@@ -1875,6 +1551,20 @@ server.on("upgrade", async (req, socket, head) => {
   // Note: browsers cannot attach arbitrary HTTP headers (including Authorization: Basic)
   // in WebSocket handshakes. Do not enforce dashboard Basic auth at the upgrade layer.
   // The gateway authenticates at the protocol layer and we inject the gateway token below.
+
+  if (req.url?.startsWith(`${VIBETUNNEL_BASE_PATH}/buffers`) || req.url?.startsWith(`${VIBETUNNEL_BASE_PATH}/ws/`)) {
+    try {
+      await ensureVibeTunnelRunning();
+    } catch {
+      socket.destroy();
+      return;
+    }
+
+    req.url = req.url.slice(VIBETUNNEL_BASE_PATH.length) || "/";
+    prepareVibeTunnelProxyRequest(req);
+    vibetunnelProxy.ws(req, socket, head, { target: VIBETUNNEL_TARGET });
+    return;
+  }
 
   if (!isConfigured()) {
     socket.destroy();

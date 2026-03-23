@@ -115,7 +115,7 @@ This is not a crash — it means the gateway is running, but no device has been 
 
 Fix:
 - Open `/setup`
-- Use the **Debug Console**:
+- Use the embedded **VibeTunnel** terminal (or open it full screen) to run:
   - `openclaw devices list`
   - `openclaw devices approve <requestId>`
 

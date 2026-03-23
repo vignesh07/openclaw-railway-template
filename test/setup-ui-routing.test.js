@@ -11,8 +11,9 @@ test("server routes setup UI through Next under the existing auth gate", () => {
   assert.match(src, /await nextHandler\(req, res\)/);
 });
 
-test("server exposes terminal history endpoint for the setup surface", () => {
+test("server mounts vibetunnel separately from the setup app", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
-  assert.match(src, /app\.get\("\/setup\/api\/terminal"/);
-  assert.match(src, /listSetupEvents\(/);
+  assert.match(src, /const VIBETUNNEL_BASE_PATH = "\/vibetunnel"/);
+  assert.match(src, /app\.use\(VIBETUNNEL_BASE_PATH, requireDashboardAuth/);
+  assert.doesNotMatch(src, /app\.get\("\/setup\/api\/terminal"/);
 });

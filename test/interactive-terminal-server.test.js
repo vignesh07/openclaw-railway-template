@@ -2,35 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-test("interactive setup terminal exposes session lifecycle routes behind setup auth", () => {
+test("wrapper exposes vibetunnel through a dedicated proxied route instead of setup terminal session routes", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
 
-  assert.match(src, /app\.post\("\/setup\/api\/terminal\/session", requireSetupAuth/);
-  assert.match(src, /app\.get\("\/setup\/api\/terminal\/session\/:sessionId", requireSetupAuth/);
-  assert.match(src, /app\.post\("\/setup\/api\/terminal\/session\/:sessionId\/input", requireSetupAuth/);
-  assert.match(src, /app\.post\("\/setup\/api\/terminal\/session\/:sessionId\/terminate", requireSetupAuth/);
+  assert.match(src, /const VIBETUNNEL_BASE_PATH = "\/vibetunnel"/);
+  assert.match(src, /app\.use\(VIBETUNNEL_BASE_PATH, requireDashboardAuth/);
+  assert.match(src, /vibetunnelProxy\.web\(req, res, \{ target: VIBETUNNEL_TARGET \}\)/);
+  assert.doesNotMatch(src, /app\.post\("\/setup\/api\/terminal\/session"/);
+  assert.doesNotMatch(src, /app\.get\("\/setup\/api\/terminal\/session\/:sessionId"/);
+  assert.doesNotMatch(src, /app\.post\("\/setup\/api\/terminal\/session\/:sessionId\/input"/);
+  assert.doesNotMatch(src, /app\.post\("\/setup\/api\/terminal\/session\/:sessionId\/terminate"/);
 });
 
-test("interactive setup terminal allows custom openclaw commands, redacts sensitive argv, blocks unmanaged gateway commands, and accepts blank stdin lines", () => {
+test("wrapper starts vibetunnel in loopback no-auth mode behind wrapper auth", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
 
-  assert.match(src, /function validateInteractiveOpenClawArg\(/);
-  assert.match(src, /function sanitizeTerminalCommandLine\(/);
-  assert.match(src, /if \(subcommand === "gateway"\)/);
-  assert.match(src, /title: redactSecrets\(title \|\| ""\)/);
-  assert.match(src, /commandLine: sanitizeTerminalCommandLine\(argv\)/);
-  assert.match(src, /validateInteractiveOpenClawArg\(subcommand, "OpenClaw subcommand"\)/);
-  assert.match(src, /Only `openclaw \.\.\.` commands and `gateway\.\{start\|stop\|restart\}` are allowed in the setup terminal\./);
-  assert.match(src, /Object\.prototype\.hasOwnProperty\.call\(req\.body \|\| \{\}, "input"\)/);
-  assert.match(src, /session\.proc\.stdin\.write\(addNewline \? `\$\{input\}\\n` : input, "utf8"\)/);
+  assert.match(src, /"--no-auth"/);
+  assert.match(src, /delete req\.headers\["x-forwarded-for"\]/);
+  assert.match(src, /changeOrigin: true/);
+  assert.doesNotMatch(src, /x-vibetunnel-local/);
 });
 
-test("interactive setup terminal refreshes session liveness and waits for gateway shutdown", () => {
+test("wrapper patches vibetunnel assets for the /vibetunnel mount and reuses the gateway shutdown flow", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
 
-  assert.match(src, /lastAccessedAt: createdAt/);
-  assert.match(src, /touchTerminalSession\(session\)/);
-  assert.match(src, /session\.status === "running" \|\| session\.status === "starting" \|\| session\.status === "terminating"/);
+  assert.match(src, /function buildVibeTunnelPatchedIndex\(/);
+  assert.match(src, /function buildVibeTunnelPatchedClientBundle\(/);
+  assert.match(src, /sendPatchedVibeTunnelIndex\(res\)/);
+  assert.match(src, /sendPatchedVibeTunnelBundle\(res\)/);
   assert.match(src, /async function stopGateway\(/);
   assert.match(src, /await stopGateway\(\)/);
 });
