@@ -14,3 +14,11 @@ test("setup dashboard uses live terminal session endpoints and stdin controls", 
   assert.match(src, /Send EOF/);
   assert.match(src, /Stop command/);
 });
+
+test("setup dashboard places status cards above the activity terminal", () => {
+  const src = fs.readFileSync(new URL("../components/setup/setup-dashboard.jsx", import.meta.url), "utf8");
+
+  assert.match(src, /<div className="grid gap-4 sm:grid-cols-2">/);
+  assert.ok(src.indexOf("<CardTitle>Wrapper status</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Activity terminal</CardTitle>'));
+  assert.ok(src.indexOf("<CardTitle>App info</CardTitle>") < src.indexOf('<CardTitle className="text-lg">Activity terminal</CardTitle>'));
+});

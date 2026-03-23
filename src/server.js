@@ -1052,10 +1052,22 @@ function validateTerminalToken(value, label) {
   }
 }
 
+function validateInteractiveOpenClawArg(value, label) {
+  if (!value) {
+    throw new Error(`Missing ${label}`);
+  }
+
+  if (/[\u0000-\u001F\u007F]/.test(value)) {
+    throw new Error(`Invalid ${label}`);
+  }
+}
+
 function ensureAllowedInteractiveOpenClawArgs(args) {
   if (!args.length) {
     throw new Error("Missing OpenClaw subcommand");
   }
+
+  const [subcommand, ...rest] = args;
 
   if (args.length === 1 && ["--version", "status", "health", "doctor"].includes(args[0])) {
     return;
@@ -1098,7 +1110,24 @@ function ensureAllowedInteractiveOpenClawArgs(args) {
     return;
   }
 
-  throw new Error("Command not allowed in setup terminal. Use a setup-safe OpenClaw command such as status, health, doctor, logs --tail, config get, devices list/approve, plugins list/enable, or pairing approve.");
+  if (subcommand === "onboard") {
+    throw new Error("`openclaw onboard` stays behind the setup flow. Use the setup form or `/setup/api/run` for onboarding.");
+  }
+
+  if (subcommand === "gateway") {
+    throw new Error("`openclaw gateway ...` is blocked here because the wrapper manages the gateway lifecycle.");
+  }
+
+  if (subcommand === "config" && rest[0] && rest[0] !== "get") {
+    throw new Error("`openclaw config ...` is limited to read-only `config get` in the setup terminal.");
+  }
+
+  validateInteractiveOpenClawArg(subcommand, "OpenClaw subcommand");
+  rest.forEach((arg, index) => {
+    validateInteractiveOpenClawArg(arg, `argument ${index + 1}`);
+  });
+
+  return;
 }
 
 function parseInteractiveTerminalCommand(commandLine) {

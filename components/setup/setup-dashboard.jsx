@@ -114,7 +114,18 @@ async function readJson(url, options) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
+    let details = text || response.statusText;
+
+    if (text) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed?.error) {
+          details = parsed.error;
+        }
+      } catch {}
+    }
+
+    throw new Error(`HTTP ${response.status}: ${details || response.statusText}`);
   }
 
   return response.json();
@@ -476,9 +487,51 @@ export function SetupDashboard() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_22rem]">
-        <Card className="overflow-hidden bg-panel/80">
-          <CardHeader className="border-b border-border/80 pb-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle>Wrapper status</CardTitle>
+                <CardDescription>Live values from <code className="font-mono text-xs text-foreground">/setup/api/status</code> and <code className="font-mono text-xs text-foreground">/setup/api/debug</code>.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <MetricRow label="OpenClaw" value={status?.openclawVersion || "Loading"} mono />
+                <MetricRow label="Gateway target" value={status?.gatewayTarget || "Pending"} mono />
+                <MetricRow label="State dir" value={debugInfo?.wrapper?.stateDir || "Pending"} mono />
+                <MetricRow label="Workspace dir" value={debugInfo?.wrapper?.workspaceDir || "Pending"} mono />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle>App info</CardTitle>
+                <CardDescription>Compact runtime context for the Railway wrapper and setup surface.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {providerLabels.length ? (
+                    providerLabels.map((label) => (
+                      <Badge key={label} variant="secondary" className="normal-case tracking-[0.08em]">
+                        {label}
+                      </Badge>
+                    ))
+                  ) : (
+                    <Badge variant="secondary" className="normal-case tracking-[0.08em]">
+                      Loading providers
+                    </Badge>
+                  )}
+                </div>
+                <MetricRow label="Provider groups" value={String(status?.authGroups?.length || 0)} />
+                <MetricRow label="Gateway process" value={gatewayRunning ? "Managed and running" : "Managed but idle"} />
+                <MetricRow label="SQLite" value={debugInfo?.wrapper?.setupDbPath || status?.setupDbPath || "Pending"} mono />
+                <MetricRow label="Railway commit" value={debugInfo?.wrapper?.railwayCommit || "Unavailable"} mono />
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="overflow-hidden bg-panel/80">
+            <CardHeader className="border-b border-border/80 pb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle className="text-lg">Activity terminal</CardTitle>
                   <CardDescription>Live OpenClaw output, session prompts, and wrapper snapshots for the authenticated setup console.</CardDescription>
@@ -510,52 +563,14 @@ export function SetupDashboard() {
                 </pre>
               </div>
             </CardContent>
-        </Card>
+          </Card>
+        </div>
 
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Wrapper status</CardTitle>
-              <CardDescription>Live values from <code className="font-mono text-xs text-foreground">/setup/api/status</code> and <code className="font-mono text-xs text-foreground">/setup/api/debug</code>.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <MetricRow label="OpenClaw" value={status?.openclawVersion || "Loading"} mono />
-              <MetricRow label="Gateway target" value={status?.gatewayTarget || "Pending"} mono />
-              <MetricRow label="State dir" value={debugInfo?.wrapper?.stateDir || "Pending"} mono />
-              <MetricRow label="Workspace dir" value={debugInfo?.wrapper?.workspaceDir || "Pending"} mono />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>App info</CardTitle>
-              <CardDescription>Compact runtime context for the Railway wrapper and setup surface.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {providerLabels.length ? (
-                  providerLabels.map((label) => (
-                    <Badge key={label} variant="secondary" className="normal-case tracking-[0.08em]">
-                      {label}
-                    </Badge>
-                  ))
-                ) : (
-                  <Badge variant="secondary" className="normal-case tracking-[0.08em]">
-                    Loading providers
-                  </Badge>
-                )}
-              </div>
-              <MetricRow label="Provider groups" value={String(status?.authGroups?.length || 0)} />
-              <MetricRow label="Gateway process" value={gatewayRunning ? "Managed and running" : "Managed but idle"} />
-              <MetricRow label="SQLite" value={debugInfo?.wrapper?.setupDbPath || status?.setupDbPath || "Pending"} mono />
-              <MetricRow label="Railway commit" value={debugInfo?.wrapper?.railwayCommit || "Unavailable"} mono />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
               <CardTitle>Interactive command runner</CardTitle>
-              <CardDescription>Starts a live session through <code className="font-mono text-xs text-foreground">/setup/api/terminal/session</code>. For safety, the setup terminal accepts setup-safe <code className="font-mono text-xs text-foreground">openclaw ...</code> commands plus <code className="font-mono text-xs text-foreground">gateway.*</code>.</CardDescription>
+              <CardDescription>Starts a live session through <code className="font-mono text-xs text-foreground">/setup/api/terminal/session</code>. You can run custom <code className="font-mono text-xs text-foreground">openclaw ...</code> commands here, while wrapper-owned onboarding, gateway control, and config writes stay blocked.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form className="space-y-3" onSubmit={handleCommandSubmit}>
