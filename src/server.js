@@ -265,14 +265,7 @@ async function ensureGatewayRunning() {
 
 async function restartGateway() {
   if (gatewayProc) {
-    try {
-      gatewayProc.kill("SIGTERM");
-    } catch {
-      // ignore
-    }
-    // Give it a moment to exit and release the port.
-    await sleep(750);
-    gatewayProc = null;
+    await stopGateway();
   }
   return ensureGatewayRunning();
 }
@@ -823,6 +816,540 @@ function extractDeviceRequestIds(text) {
   return Array.from(out);
 }
 
+const TERMINAL_SESSION_TTL_MS = 15 * 60 * 1000;
+const TERMINAL_SESSION_MAX_BUFFER = 160_000;
+const TERMINAL_SESSION_LIMIT = 6;
+const terminalSessions = new Map();
+
+function pruneTerminalSessions() {
+  const now = Date.now();
+
+  for (const [sessionId, session] of terminalSessions.entries()) {
+    const activityAt = session.status === "running" || session.status === "starting" || session.status === "terminating"
+      ? session.lastAccessedAt || session.updatedAt || session.createdAt
+      : session.endedAt || session.updatedAt || session.createdAt;
+    const ageMs = now - new Date(activityAt).getTime();
+    if (ageMs <= TERMINAL_SESSION_TTL_MS) {
+      continue;
+    }
+
+    if (session.proc && (session.status === "running" || session.status === "starting" || session.status === "terminating")) {
+      session.status = "terminating";
+      try {
+        session.proc.kill(session.cleanupRequestedAt ? "SIGKILL" : "SIGTERM");
+        session.cleanupRequestedAt = new Date().toISOString();
+      } catch {
+        // ignore
+      }
+
+      continue;
+    }
+
+    terminalSessions.delete(sessionId);
+  }
+}
+
+function createTerminalSession(commandLine) {
+  pruneTerminalSessions();
+
+  const runningCount = Array.from(terminalSessions.values()).filter((session) => session.status === "running").length;
+  if (runningCount >= TERMINAL_SESSION_LIMIT) {
+    throw new Error("Terminal busy: too many active sessions. Wait for an existing command to finish.");
+  }
+
+  const createdAt = new Date().toISOString();
+  const session = {
+    id: crypto.randomUUID(),
+    commandLine,
+    status: "starting",
+    createdAt,
+    lastAccessedAt: createdAt,
+    updatedAt: createdAt,
+    startedAt: createdAt,
+    endedAt: null,
+    exitCode: null,
+    signal: null,
+    buffer: "",
+    totalChars: 0,
+    trimmedChars: 0,
+    cleanupRequestedAt: null,
+    proc: null,
+  };
+
+  terminalSessions.set(session.id, session);
+  return session;
+}
+
+function appendTerminalSessionOutput(session, chunk) {
+  const text = redactSecrets(String(chunk || "").replace(/\r\n/g, "\n"));
+  if (!text) {
+    return;
+  }
+
+  session.buffer += text;
+  session.totalChars += text.length;
+  session.updatedAt = new Date().toISOString();
+
+  if (session.buffer.length > TERMINAL_SESSION_MAX_BUFFER) {
+    const overflow = session.buffer.length - TERMINAL_SESSION_MAX_BUFFER;
+    session.buffer = session.buffer.slice(overflow);
+    session.trimmedChars += overflow;
+  }
+}
+
+function touchTerminalSession(session) {
+  session.lastAccessedAt = new Date().toISOString();
+}
+
+function finishTerminalSession(session, details = {}) {
+  if (session.endedAt) {
+    return;
+  }
+
+  session.status = details.status || "exited";
+  session.exitCode = Number.isInteger(details.exitCode) ? details.exitCode : session.exitCode;
+  session.signal = details.signal ?? session.signal ?? null;
+  session.endedAt = new Date().toISOString();
+  session.updatedAt = session.endedAt;
+  session.proc = null;
+  session.cleanupRequestedAt = null;
+  touchTerminalSession(session);
+
+  const summary = [];
+  if (session.status === "failed" && details.error) {
+    summary.push(`[terminal] ${String(details.error)}`);
+  }
+  if (session.signal) {
+    summary.push(`[terminal] process terminated by ${session.signal}`);
+  } else if (Number.isInteger(session.exitCode)) {
+    summary.push(`[terminal] process exited with code ${session.exitCode}`);
+  }
+  if (summary.length) {
+    appendTerminalSessionOutput(session, `\n${summary.join("\n")}\n`);
+  }
+
+  logSetupEvent(
+    "console",
+    `$ ${session.commandLine}`,
+    [
+      `status: ${session.status}`,
+      Number.isInteger(session.exitCode) ? `exit code: ${session.exitCode}` : null,
+      session.signal ? `signal: ${session.signal}` : null,
+      `captured chars: ${session.totalChars}`,
+      session.trimmedChars ? `trimmed chars: ${session.trimmedChars}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
+function getTerminalSession(sessionId) {
+  pruneTerminalSessions();
+  const session = terminalSessions.get(sessionId) || null;
+  if (session) {
+    touchTerminalSession(session);
+  }
+  return session;
+}
+
+function buildTerminalSessionResponse(session, cursorValue) {
+  const rawCursor = Number.parseInt(String(cursorValue ?? "0"), 10);
+  const cursor = Number.isFinite(rawCursor) && rawCursor > 0 ? rawCursor : 0;
+  const safeCursor = Math.max(cursor, session.trimmedChars);
+  const offset = Math.max(0, safeCursor - session.trimmedChars);
+  const nextCursor = session.trimmedChars + session.buffer.length;
+
+  return {
+    ok: true,
+    session: {
+      id: session.id,
+      commandLine: session.commandLine,
+      status: session.status,
+      createdAt: session.createdAt,
+      startedAt: session.startedAt,
+      lastAccessedAt: session.lastAccessedAt,
+      updatedAt: session.updatedAt,
+      endedAt: session.endedAt,
+      cleanupRequestedAt: session.cleanupRequestedAt,
+      exitCode: session.exitCode,
+      signal: session.signal,
+      canAcceptInput: Boolean(session.proc?.stdin) && session.status === "running" && !session.proc.stdin.destroyed,
+    },
+    output: session.buffer.slice(offset),
+    cursor: safeCursor,
+    nextCursor,
+    trimmedToCursor: session.trimmedChars,
+  };
+}
+
+function tokenizeCommandLine(input) {
+  const source = String(input || "").trim();
+  if (!source) {
+    throw new Error("Missing command");
+  }
+
+  const tokens = [];
+  let current = "";
+  let quote = "";
+  let escaped = false;
+
+  for (const char of source) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped) {
+    throw new Error("Command cannot end with a trailing backslash");
+  }
+  if (quote) {
+    throw new Error("Command contains an unterminated quote");
+  }
+  if (current) {
+    tokens.push(current);
+  }
+  if (!tokens.length) {
+    throw new Error("Missing command");
+  }
+
+  return tokens;
+}
+
+function validateTerminalToken(value, label) {
+  if (!/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error(`Invalid ${label}`);
+  }
+}
+
+function ensureAllowedInteractiveOpenClawArgs(args) {
+  if (!args.length) {
+    throw new Error("Missing OpenClaw subcommand");
+  }
+
+  if (args.length === 1 && ["--version", "status", "health", "doctor"].includes(args[0])) {
+    return;
+  }
+
+  if (args.length === 2 && args[0] === "doctor" && args[1] === "--fix") {
+    return;
+  }
+
+  if (args.length === 3 && args[0] === "logs" && args[1] === "--tail" && /^\d+$/.test(args[2])) {
+    return;
+  }
+
+  if (args.length === 3 && args[0] === "config" && args[1] === "get") {
+    validateTerminalToken(args[2], "config path");
+    return;
+  }
+
+  if (args.length === 2 && args[0] === "devices" && args[1] === "list") {
+    return;
+  }
+
+  if (args.length === 3 && args[0] === "devices" && args[1] === "approve") {
+    validateTerminalToken(args[2], "device request ID");
+    return;
+  }
+
+  if (args.length === 2 && args[0] === "plugins" && args[1] === "list") {
+    return;
+  }
+
+  if (args.length === 3 && args[0] === "plugins" && args[1] === "enable") {
+    validateTerminalToken(args[2], "plugin name");
+    return;
+  }
+
+  if (args.length === 4 && args[0] === "pairing" && args[1] === "approve") {
+    validateTerminalToken(args[2], "pairing channel");
+    validateTerminalToken(args[3], "pairing code");
+    return;
+  }
+
+  throw new Error("Command not allowed in setup terminal. Use a setup-safe OpenClaw command such as status, health, doctor, logs --tail, config get, devices list/approve, plugins list/enable, or pairing approve.");
+}
+
+function parseInteractiveTerminalCommand(commandLine) {
+  const argv = tokenizeCommandLine(commandLine);
+  const [program, ...args] = argv;
+
+  if (program === "openclaw") {
+    ensureAllowedInteractiveOpenClawArgs(args);
+
+    return {
+      kind: "spawn",
+      commandLine: argv.join(" "),
+      cmd: OPENCLAW_NODE,
+      args: clawArgs(args),
+    };
+  }
+
+  if (["gateway.start", "gateway.stop", "gateway.restart"].includes(program)) {
+    if (args.length) {
+      throw new Error(`${program} does not accept arguments`);
+    }
+
+    return {
+      kind: "gateway",
+      commandLine: program,
+      action: program,
+    };
+  }
+
+  throw new Error("Only setup-safe `openclaw ...` commands and `gateway.{start|stop|restart}` are allowed in the setup terminal.");
+}
+
+async function runGatewayTerminalAction(action) {
+  if (action === "gateway.restart") {
+    await restartGateway();
+    return { ok: true, output: "Gateway restarted (wrapper-managed).\n" };
+  }
+  if (action === "gateway.stop") {
+    await stopGateway();
+    return { ok: true, output: "Gateway stopped (wrapper-managed).\n" };
+  }
+  if (action === "gateway.start") {
+    const result = await ensureGatewayRunning();
+    return {
+      ok: Boolean(result.ok),
+      output: result.ok ? "Gateway started.\n" : `Gateway not started: ${result.reason}\n`,
+    };
+  }
+
+  throw new Error(`Unsupported gateway action: ${action}`);
+}
+
+async function stopGateway({ timeoutMs = 5_000 } = {}) {
+  const proc = gatewayProc;
+  if (!proc) {
+    return { ok: true };
+  }
+
+  const exited = await new Promise((resolve) => {
+    let settled = false;
+    let hardKillTimer;
+
+    const finish = (ok) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      proc.off("exit", handleExit);
+      if (hardKillTimer) {
+        clearTimeout(hardKillTimer);
+      }
+      resolve(ok);
+    };
+
+    const handleExit = () => finish(true);
+    proc.once("exit", handleExit);
+
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      finish(false);
+      return;
+    }
+
+    hardKillTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        finish(false);
+        return;
+      }
+
+      setTimeout(() => {
+        finish(proc.exitCode !== null);
+      }, 1_500);
+    }, timeoutMs);
+  });
+
+  if (!exited) {
+    throw new Error("Gateway did not stop cleanly in time");
+  }
+
+  return { ok: true };
+}
+
+app.post("/setup/api/terminal/session", requireSetupAuth, async (req, res) => {
+  const commandLine = String(req.body?.commandLine || "").trim();
+
+  let command;
+  try {
+    command = parseInteractiveTerminalCommand(commandLine);
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+
+  let session;
+  try {
+    session = createTerminalSession(command.commandLine);
+  } catch (error) {
+    return res.status(409).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+
+  appendTerminalSessionOutput(session, `$ ${command.commandLine}\n`);
+
+  if (command.kind === "gateway") {
+    session.status = "running";
+    try {
+      const result = await runGatewayTerminalAction(command.action);
+      appendTerminalSessionOutput(session, result.output);
+      finishTerminalSession(session, { status: result.ok ? "exited" : "failed", exitCode: result.ok ? 0 : 1 });
+      return res.status(result.ok ? 201 : 500).json(buildTerminalSessionResponse(session, 0));
+    } catch (error) {
+      finishTerminalSession(session, {
+        status: "failed",
+        exitCode: 1,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(500).json(buildTerminalSessionResponse(session, 0));
+    }
+  }
+
+  try {
+    const proc = childProcess.spawn(command.cmd, command.args, {
+      cwd: WORKSPACE_DIR,
+      env: {
+        ...process.env,
+        OPENCLAW_STATE_DIR: STATE_DIR,
+        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    session.proc = proc;
+    session.status = "running";
+
+    proc.stdout?.on("data", (chunk) => {
+      appendTerminalSessionOutput(session, chunk);
+    });
+
+    proc.stderr?.on("data", (chunk) => {
+      appendTerminalSessionOutput(session, chunk);
+    });
+
+    proc.on("error", (error) => {
+      finishTerminalSession(session, {
+        status: "failed",
+        exitCode: 127,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    proc.on("close", (code, signal) => {
+      finishTerminalSession(session, {
+        status: code === 0 ? "exited" : "failed",
+        exitCode: typeof code === "number" ? code : 0,
+        signal,
+      });
+    });
+
+    return res.status(201).json(buildTerminalSessionResponse(session, 0));
+  } catch (error) {
+    finishTerminalSession(session, {
+      status: "failed",
+      exitCode: 127,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json(buildTerminalSessionResponse(session, 0));
+  }
+});
+
+app.get("/setup/api/terminal/session/:sessionId", requireSetupAuth, (req, res) => {
+  const session = getTerminalSession(req.params.sessionId);
+
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "Terminal session not found" });
+  }
+
+  return res.json(buildTerminalSessionResponse(session, req.query.cursor));
+});
+
+app.post("/setup/api/terminal/session/:sessionId/input", requireSetupAuth, (req, res) => {
+  const session = getTerminalSession(req.params.sessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "Terminal session not found" });
+  }
+  if (session.status !== "running" || !session.proc?.stdin || session.proc.stdin.destroyed) {
+    return res.status(409).json({ ok: false, error: "Terminal session is not accepting input" });
+  }
+
+  const hasInput = Object.prototype.hasOwnProperty.call(req.body || {}, "input");
+  const input = typeof req.body?.input === "string" ? req.body.input : "";
+  const addNewline = req.body?.addNewline !== false;
+  const endInput = Boolean(req.body?.endInput);
+
+  if (!hasInput && !endInput) {
+    return res.status(400).json({ ok: false, error: "Missing terminal input" });
+  }
+
+  try {
+    if (hasInput) {
+      session.proc.stdin.write(addNewline ? `${input}\n` : input, "utf8");
+      session.updatedAt = new Date().toISOString();
+    }
+    if (endInput) {
+      session.proc.stdin.end();
+      session.updatedAt = new Date().toISOString();
+    }
+    return res.json(buildTerminalSessionResponse(session, req.body?.cursor));
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/setup/api/terminal/session/:sessionId/terminate", requireSetupAuth, (req, res) => {
+  const session = getTerminalSession(req.params.sessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "Terminal session not found" });
+  }
+  if (session.status !== "running" || !session.proc) {
+    return res.status(409).json({ ok: false, error: "Terminal session is not running" });
+  }
+
+  try {
+    session.proc.kill("SIGTERM");
+    session.updatedAt = new Date().toISOString();
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 const ALLOWED_CONSOLE_COMMANDS = new Set([
   // Wrapper-managed lifecycle
   "gateway.restart",
@@ -867,11 +1394,7 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
       return logCommandResult(200, { ok: true, output: "Gateway restarted (wrapper-managed).\n" });
     }
     if (cmd === "gateway.stop") {
-      if (gatewayProc) {
-        try { gatewayProc.kill("SIGTERM"); } catch {}
-        await sleep(750);
-        gatewayProc = null;
-      }
+      await stopGateway();
       return logCommandResult(200, { ok: true, output: "Gateway stopped (wrapper-managed).\n" });
     }
     if (cmd === "gateway.start") {
@@ -1015,9 +1538,7 @@ app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
     // Stop gateway to avoid running gateway + onboard concurrently on small Railway instances.
     try {
       if (gatewayProc) {
-        try { gatewayProc.kill("SIGTERM"); } catch {}
-        await sleep(750);
-        gatewayProc = null;
+        await stopGateway();
       }
     } catch {
       // ignore
@@ -1135,9 +1656,7 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
 
     // Stop gateway before restore so we don't overwrite live files.
     if (gatewayProc) {
-      try { gatewayProc.kill("SIGTERM"); } catch {}
-      await sleep(750);
-      gatewayProc = null;
+      await stopGateway();
     }
 
     const buf = await readBodyBuffer(req, 250 * 1024 * 1024); // 250MB max
