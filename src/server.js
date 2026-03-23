@@ -798,7 +798,7 @@ function logSetupEvent(source, title, body) {
   try {
     appendSetupEvent({
       source,
-      title,
+      title: redactSecrets(title || ""),
       body: redactSecrets(body || ""),
     });
   } catch (err) {
@@ -1062,6 +1062,30 @@ function validateInteractiveOpenClawArg(value, label) {
   }
 }
 
+function sanitizeTerminalCommandLine(argv) {
+  const sensitiveFlagPattern = /token|secret|pass(word)?|key/i;
+  const tokens = [...argv];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const [flagName, inlineValue] = token.split("=", 2);
+
+    if (flagName?.startsWith("--") && sensitiveFlagPattern.test(flagName)) {
+      if (inlineValue !== undefined) {
+        tokens[index] = `${flagName}=[REDACTED]`;
+      } else if (index + 1 < tokens.length) {
+        tokens[index + 1] = "[REDACTED]";
+      }
+    }
+  }
+
+  if (tokens[0] === "openclaw" && tokens[1] === "config" && tokens[2] === "set" && tokens.length >= 5) {
+    tokens[4] = "[REDACTED]";
+  }
+
+  return redactSecrets(tokens.join(" "));
+}
+
 function ensureAllowedInteractiveOpenClawArgs(args) {
   if (!args.length) {
     throw new Error("Missing OpenClaw subcommand");
@@ -1069,57 +1093,8 @@ function ensureAllowedInteractiveOpenClawArgs(args) {
 
   const [subcommand, ...rest] = args;
 
-  if (args.length === 1 && ["--version", "status", "health", "doctor"].includes(args[0])) {
-    return;
-  }
-
-  if (args.length === 2 && args[0] === "doctor" && args[1] === "--fix") {
-    return;
-  }
-
-  if (args.length === 3 && args[0] === "logs" && args[1] === "--tail" && /^\d+$/.test(args[2])) {
-    return;
-  }
-
-  if (args.length === 3 && args[0] === "config" && args[1] === "get") {
-    validateTerminalToken(args[2], "config path");
-    return;
-  }
-
-  if (args.length === 2 && args[0] === "devices" && args[1] === "list") {
-    return;
-  }
-
-  if (args.length === 3 && args[0] === "devices" && args[1] === "approve") {
-    validateTerminalToken(args[2], "device request ID");
-    return;
-  }
-
-  if (args.length === 2 && args[0] === "plugins" && args[1] === "list") {
-    return;
-  }
-
-  if (args.length === 3 && args[0] === "plugins" && args[1] === "enable") {
-    validateTerminalToken(args[2], "plugin name");
-    return;
-  }
-
-  if (args.length === 4 && args[0] === "pairing" && args[1] === "approve") {
-    validateTerminalToken(args[2], "pairing channel");
-    validateTerminalToken(args[3], "pairing code");
-    return;
-  }
-
-  if (subcommand === "onboard") {
-    throw new Error("`openclaw onboard` stays behind the setup flow. Use the setup form or `/setup/api/run` for onboarding.");
-  }
-
   if (subcommand === "gateway") {
     throw new Error("`openclaw gateway ...` is blocked here because the wrapper manages the gateway lifecycle.");
-  }
-
-  if (subcommand === "config" && rest[0] && rest[0] !== "get") {
-    throw new Error("`openclaw config ...` is limited to read-only `config get` in the setup terminal.");
   }
 
   validateInteractiveOpenClawArg(subcommand, "OpenClaw subcommand");
@@ -1139,7 +1114,7 @@ function parseInteractiveTerminalCommand(commandLine) {
 
     return {
       kind: "spawn",
-      commandLine: argv.join(" "),
+      commandLine: sanitizeTerminalCommandLine(argv),
       cmd: OPENCLAW_NODE,
       args: clawArgs(args),
     };
@@ -1157,7 +1132,7 @@ function parseInteractiveTerminalCommand(commandLine) {
     };
   }
 
-  throw new Error("Only setup-safe `openclaw ...` commands and `gateway.{start|stop|restart}` are allowed in the setup terminal.");
+  throw new Error("Only `openclaw ...` commands and `gateway.{start|stop|restart}` are allowed in the setup terminal.");
 }
 
 async function runGatewayTerminalAction(action) {

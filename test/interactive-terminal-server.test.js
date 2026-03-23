@@ -11,14 +11,16 @@ test("interactive setup terminal exposes session lifecycle routes behind setup a
   assert.match(src, /app\.post\("\/setup\/api\/terminal\/session\/:sessionId\/terminate", requireSetupAuth/);
 });
 
-test("interactive setup terminal allows custom openclaw commands while blocking wrapper-conflicting ones and accepts blank stdin lines", () => {
+test("interactive setup terminal allows custom openclaw commands, redacts sensitive argv, blocks unmanaged gateway commands, and accepts blank stdin lines", () => {
   const src = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
 
   assert.match(src, /function validateInteractiveOpenClawArg\(/);
-  assert.match(src, /if \(subcommand === "onboard"\)/);
+  assert.match(src, /function sanitizeTerminalCommandLine\(/);
   assert.match(src, /if \(subcommand === "gateway"\)/);
-  assert.match(src, /if \(subcommand === "config" && rest\[0\] && rest\[0\] !== "get"\)/);
+  assert.match(src, /title: redactSecrets\(title \|\| ""\)/);
+  assert.match(src, /commandLine: sanitizeTerminalCommandLine\(argv\)/);
   assert.match(src, /validateInteractiveOpenClawArg\(subcommand, "OpenClaw subcommand"\)/);
+  assert.match(src, /Only `openclaw \.\.\.` commands and `gateway\.\{start\|stop\|restart\}` are allowed in the setup terminal\./);
   assert.match(src, /Object\.prototype\.hasOwnProperty\.call\(req\.body \|\| \{\}, "input"\)/);
   assert.match(src, /session\.proc\.stdin\.write\(addNewline \? `\$\{input\}\\n` : input, "utf8"\)/);
 });

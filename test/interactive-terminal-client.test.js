@@ -10,6 +10,8 @@ test("setup dashboard uses live terminal session endpoints and stdin controls", 
   assert.match(src, /`\/setup\/api\/terminal\/session\/\$\{activeSessionId\}\/terminate`/);
   assert.match(src, /sessionRequestInFlightRef/);
   assert.match(src, /terminalCursorRef/);
+  assert.match(src, /You can run custom/);
+  assert.match(src, /live OpenClaw state/);
   assert.match(src, /Send input/);
   assert.match(src, /Send EOF/);
   assert.match(src, /Stop command/);

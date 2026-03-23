@@ -302,7 +302,7 @@ export function SetupDashboard() {
   async function handleCommandSubmit(event) {
     event.preventDefault();
     if (!commandLine.trim()) {
-      appendTerminal("Terminal command missing.", "Type a setup-safe `openclaw ...` command or `gateway.*` first.");
+      appendTerminal("Terminal command missing.", "Type an `openclaw ...` command or a wrapper gateway shortcut first.");
       return;
     }
 
@@ -570,7 +570,7 @@ export function SetupDashboard() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle>Interactive command runner</CardTitle>
-              <CardDescription>Starts a live session through <code className="font-mono text-xs text-foreground">/setup/api/terminal/session</code>. You can run custom <code className="font-mono text-xs text-foreground">openclaw ...</code> commands here, while wrapper-owned onboarding, gateway control, and config writes stay blocked.</CardDescription>
+              <CardDescription>Starts a live session through <code className="font-mono text-xs text-foreground">/setup/api/terminal/session</code>. You can run custom <code className="font-mono text-xs text-foreground">openclaw ...</code> commands here; commands run against the live OpenClaw state, and wrapper gateway control still goes through the dedicated start, stop, and restart shortcuts.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form className="space-y-3" onSubmit={handleCommandSubmit}>
