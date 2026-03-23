@@ -64,6 +64,8 @@ ENV NODE_ENV=production
 
 COPY --from=openclaw-build /usr/local/ /usr/local/
 
+# Wrapper runtime dependencies include native addons (via vibetunnel),
+# so this stage must provide node-gyp toolchain packages before `npm ci`.
 RUN set -eux; \
   apt-get update; \
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -93,6 +95,9 @@ RUN set -eux; \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    make \
+    g++ \
+    libpam0g-dev \
     python3 \
     python3-venv \
     rustc \
