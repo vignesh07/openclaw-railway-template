@@ -5,6 +5,7 @@ import fs from "node:fs";
 test("setup dashboard embeds vibetunnel and removes the old command runner controls", () => {
   const src = fs.readFileSync(new URL("../components/setup/setup-dashboard.jsx", import.meta.url), "utf8");
 
+  assert.match(src, /href="\/dashboard"/);
   assert.match(src, /src="\/vibetunnel"/);
   assert.match(src, /Open full screen/);
   assert.match(src, /full VibeTunnel remote terminal/);

@@ -194,7 +194,6 @@ async function waitForGatewayReady(opts = {}) {
 
 async function startGateway() {
   if (gatewayProc) return;
-  if (!isConfigured()) throw new Error("Gateway cannot start: not configured");
 
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
@@ -252,7 +251,6 @@ async function runDoctorBestEffort() {
 }
 
 async function ensureGatewayRunning() {
-  if (!isConfigured()) return { ok: false, reason: "not configured" };
   if (gatewayProc) return { ok: true };
   if (!gatewayStarting) {
     gatewayStarting = (async () => {
@@ -1537,25 +1535,18 @@ proxy.on("proxyReqWs", (proxyReq, req) => {
 });
 
 app.use(requireDashboardAuth, async (req, res) => {
-  // If not configured, force users to /setup for any non-setup routes.
-  if (!isConfigured() && !req.path.startsWith("/setup")) {
-    return res.redirect("/setup");
-  }
-
-  if (isConfigured()) {
-    try {
-      await ensureGatewayRunning();
-    } catch (err) {
-      const hint = [
-        "Gateway not ready.",
-        String(err),
-        lastGatewayError ? `\n${lastGatewayError}` : "",
-        "\nTroubleshooting:",
-        "- Visit /setup and check the Debug Console",
-        "- Visit /setup/api/debug for config + gateway diagnostics",
-      ].join("\n");
-      return res.status(503).type("text/plain").send(hint);
-    }
+  try {
+    await ensureGatewayRunning();
+  } catch (err) {
+    const hint = [
+      "Gateway not ready.",
+      String(err),
+      lastGatewayError ? `\n${lastGatewayError}` : "",
+      "\nTroubleshooting:",
+      "- Visit /setup and check the Debug Console",
+      "- Visit /setup/api/debug for config + gateway diagnostics",
+    ].join("\n");
+    return res.status(503).type("text/plain").send(hint);
   }
 
   attachGatewayAuthHeader(req);

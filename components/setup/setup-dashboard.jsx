@@ -234,7 +234,7 @@ export function SetupDashboard() {
               <CardDescription>Keep recovery and operator shortcuts within the same setup surface.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <a className={buttonVariants({ className: "w-full" })} href="/openclaw" target="_blank" rel="noreferrer">
+              <a className={buttonVariants({ className: "w-full" })} href="/dashboard" target="_blank" rel="noreferrer">
                 Open UI
               </a>
               <a

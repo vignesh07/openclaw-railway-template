@@ -4,7 +4,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web app so u
 
 ## What you get
 
-- **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
+- **OpenClaw Gateway + Control UI** (served at `/` and `/dashboard`)
 - A minimal **Next.js setup surface** at `/setup` (protected by a password)
 - Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
 - One-click **Export backup** (so users can migrate off Railway later)
@@ -13,7 +13,7 @@ This repo packages **OpenClaw** for Railway with a small **/setup** web app so u
 ## How it works (high level)
 
 - The container runs a wrapper web server.
-- The wrapper protects `/setup` (and the Control UI at `/openclaw`) with `SETUP_PASSWORD` using HTTP Basic auth.
+- The wrapper protects `/setup` (and the Control UI at `/dashboard`) with `SETUP_PASSWORD` using HTTP Basic auth.
 - The wrapper also mounts a full VibeTunnel terminal at `/vibetunnel`; HTTP access uses the same Basic auth, and the wrapper issues a short-lived HTTP-only cookie so VibeTunnel WebSocket upgrades stay protected too.
 - The `/setup` app is a Next.js control surface backed by a small SQLite database stored in the persistent state directory.
 - During setup, the wrapper can still run `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
@@ -28,7 +28,7 @@ In Railway Template Composer:
 3) Set the following variables:
 
 Required:
-- `SETUP_PASSWORD` — user-provided password to access `/setup` and the Control UI (`/openclaw`) via HTTP Basic auth
+- `SETUP_PASSWORD` — user-provided password to access `/setup` and the Control UI (`/dashboard`) via HTTP Basic auth
 
 Recommended:
 - `OPENCLAW_STATE_DIR=/data/.openclaw`
@@ -50,7 +50,7 @@ Then:
   - Your browser will prompt for **HTTP Basic auth**. Use any username; the password is `SETUP_PASSWORD`.
 - The embedded terminal in `/setup` is powered by `/vibetunnel`, so terminal access stays behind the same wrapper auth instead of using a separate VibeTunnel login.
 - Complete setup
-- Visit `https://<your-app>.up.railway.app/` and `/openclaw` (same Basic auth)
+- Visit `https://<your-app>.up.railway.app/` and `/dashboard` (same Basic auth)
 
 ## Support / community
 
@@ -122,8 +122,8 @@ Fix:
   - `openclaw devices approve <requestId>`
 
 If `openclaw devices list` shows no pending request IDs:
-- Make sure you’re visiting the Control UI at `/openclaw` (or your native app) and letting it attempt to connect
-  - Note: the Railway wrapper now proxies the gateway and injects the auth token automatically, so you should not need to paste the gateway token into the Control UI when using `/openclaw`.
+- Make sure you’re visiting the Control UI at `/dashboard` (or your native app) and letting it attempt to connect
+  - Note: the Railway wrapper now proxies the gateway and injects the auth token automatically, so you should not need to paste the gateway token into the Control UI when using `/dashboard`.
 - Ensure your state dir is the Railway volume (recommended): `OPENCLAW_STATE_DIR=/data/.openclaw`
 - Check `/setup/api/debug` for the active state/workspace dirs + gateway readiness
 
