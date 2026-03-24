@@ -2,7 +2,6 @@
 FROM node:22-bookworm AS openclaw-build
 
 ARG OPENCLAW_GIT_REF=main
-ARG AGENCY_AGENTS_GIT_REF=main
 
 # Dependencies needed for openclaw build
 RUN apt-get update \
@@ -25,10 +24,6 @@ WORKDIR /openclaw
 ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/AaronPerk/openclaw.git .
-
-WORKDIR /agency-agents
-RUN git clone --depth 1 --branch "${AGENCY_AGENTS_GIT_REF}" https://github.com/msitarzewski/agency-agents.git . \
-  && ./scripts/convert.sh --tool openclaw
 
 WORKDIR /openclaw
 
@@ -143,15 +138,10 @@ RUN npm ci --include=dev
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
-COPY --from=openclaw-build /agency-agents /agency-agents
 
 # Provide an openclaw executable
 RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"' > /usr/local/bin/openclaw \
   && chmod +x /usr/local/bin/openclaw
-
-WORKDIR /agency-agents
-RUN ./scripts/convert.sh --tool openclaw --no-interactive
-RUN ./scripts/install.sh --tool openclaw --no-interactive
 
 WORKDIR /app
 

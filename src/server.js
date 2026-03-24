@@ -1510,13 +1510,30 @@ function requireDashboardAuth(req, res, next) {
 // cannot set custom Authorization headers for WebSocket connections, so we inject
 // the token into proxied requests at the wrapper level.
 function attachGatewayAuthHeader(req) {
-  if (!req?.headers?.authorization && OPENCLAW_GATEWAY_TOKEN) {
+  if (!req?.headers) return;
+  if (OPENCLAW_GATEWAY_TOKEN) {
     req.headers.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+    return;
   }
+  delete req.headers.authorization;
 }
 
-proxy.on("proxyReqWs", (_proxyReq, req) => {
+proxy.on("proxyReq", (proxyReq, req) => {
   attachGatewayAuthHeader(req);
+  if (req?.headers?.authorization) {
+    proxyReq.setHeader("authorization", req.headers.authorization);
+    return;
+  }
+  proxyReq.removeHeader("authorization");
+});
+
+proxy.on("proxyReqWs", (proxyReq, req) => {
+  attachGatewayAuthHeader(req);
+  if (req?.headers?.authorization) {
+    proxyReq.setHeader("authorization", req.headers.authorization);
+    return;
+  }
+  proxyReq.removeHeader("authorization");
 });
 
 app.use(requireDashboardAuth, async (req, res) => {
