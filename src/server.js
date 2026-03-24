@@ -80,6 +80,7 @@ const nextHandler = nextApp.getRequestHandler();
 const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT ?? "18789", 10);
 const INTERNAL_GATEWAY_HOST = process.env.INTERNAL_GATEWAY_HOST ?? "127.0.0.1";
 const GATEWAY_TARGET = `http://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}`;
+const DASHBOARD_BASE_PATH = "/dashboard";
 
 const INTERNAL_VIBETUNNEL_PORT = Number.parseInt(process.env.INTERNAL_VIBETUNNEL_PORT ?? "4020", 10);
 const INTERNAL_VIBETUNNEL_HOST = process.env.INTERNAL_VIBETUNNEL_HOST ?? "127.0.0.1";
@@ -173,8 +174,8 @@ async function waitForGatewayReady(opts = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      // Try the default Control UI base path, then fall back to root.
-      const paths = ["/openclaw", "/"];
+      // Try the wrapper dashboard path first, then fall back to common gateway paths.
+      const paths = [DASHBOARD_BASE_PATH, "/", "/openclaw"];
       for (const p of paths) {
         try {
           const res = await fetch(`${GATEWAY_TARGET}${p}`, { method: "GET" });
@@ -828,6 +829,7 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+    await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.controlUi.basePath", DASHBOARD_BASE_PATH]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
 
@@ -1503,6 +1505,58 @@ function requireDashboardAuth(req, res, next) {
   return next();
 }
 
+function isDashboardRequest(req) {
+  return req.path === DASHBOARD_BASE_PATH || req.path.startsWith(`${DASHBOARD_BASE_PATH}/`);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function sendDashboardBootstrapPage(res) {
+  const detail = lastGatewayError
+    ? `<pre>${escapeHtml(lastGatewayError)}</pre>`
+    : "<p>The wrapper is starting the gateway in the background.</p>";
+
+  return res.status(503).type("html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="2">
+    <title>Starting OpenClaw Dashboard</title>
+    <style>
+      body { margin: 0; font-family: IBM Plex Sans, system-ui, sans-serif; background: #09111c; color: #d6e4f0; }
+      main { max-width: 720px; margin: 0 auto; min-height: 100vh; padding: 48px 24px; display: grid; align-content: center; gap: 16px; }
+      .panel { border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 23, 42, 0.88); border-radius: 16px; padding: 24px; }
+      h1 { margin: 0 0 8px; font-size: 32px; }
+      p, pre { margin: 0; line-height: 1.6; }
+      pre { white-space: pre-wrap; word-break: break-word; color: #fca5a5; }
+      a { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <h1>Starting the dashboard</h1>
+        <p>This page will retry automatically until the OpenClaw gateway is ready.</p>
+      </section>
+      <section class="panel">
+        ${detail}
+      </section>
+      <section class="panel">
+        <p>If it keeps looping, check <a href="/setup">/setup</a> or <a href="/setup/api/debug">/setup/api/debug</a>.</p>
+      </section>
+    </main>
+  </body>
+</html>`);
+}
+
 // --- Gateway token injection ---
 // The gateway is only reachable from this container. The Control UI in the browser
 // cannot set custom Authorization headers for WebSocket connections, so we inject
@@ -1535,6 +1589,11 @@ proxy.on("proxyReqWs", (proxyReq, req) => {
 });
 
 app.use(requireDashboardAuth, async (req, res) => {
+  if (isDashboardRequest(req) && (gatewayStarting || !gatewayProc)) {
+    ensureGatewayRunning().catch(() => {});
+    return sendDashboardBootstrapPage(res);
+  }
+
   try {
     await ensureGatewayRunning();
   } catch (err) {
@@ -1609,6 +1668,7 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.controlUi.basePath", DASHBOARD_BASE_PATH]));
       console.log("[wrapper] gateway tokens synced");
     } catch (err) {
       console.warn(`[wrapper] failed to sync gateway tokens: ${String(err)}`);
