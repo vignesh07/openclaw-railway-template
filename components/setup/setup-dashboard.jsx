@@ -47,6 +47,10 @@ function MetricRow({ label, value, mono = false }) {
 export function SetupDashboard() {
   const [status, setStatus] = useState(null);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [configDraft, setConfigDraft] = useState("");
+  const [configExists, setConfigExists] = useState(false);
+  const [configPath, setConfigPath] = useState("");
+  const [configFeedback, setConfigFeedback] = useState(null);
   const [snapshotError, setSnapshotError] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -71,9 +75,40 @@ export function SetupDashboard() {
     }
   }, []);
 
+  const loadConfig = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setBusyAction((current) => current || "config-load");
+      setConfigFeedback(null);
+    }
+
+    try {
+      const response = await readJson("/setup/api/config/raw");
+      setConfigPath(response.path || "");
+      setConfigExists(Boolean(response.exists));
+      setConfigDraft(response.content || "");
+
+      if (!quiet) {
+        setConfigFeedback({
+          tone: response.exists ? "success" : "warning",
+          message: response.exists ? "Loaded the active config file." : "No config file exists yet. Saving here will create it.",
+        });
+      }
+    } catch (error) {
+      setConfigFeedback({
+        tone: "danger",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (!quiet) {
+        setBusyAction((current) => (current === "config-load" ? "" : current));
+      }
+    }
+  }, []);
+
   useEffect(() => {
     void loadSnapshot();
-  }, [loadSnapshot]);
+    void loadConfig({ quiet: true });
+  }, [loadConfig, loadSnapshot]);
 
   const providerLabels = useMemo(
     () => (status?.authGroups || []).slice(0, 4).map((group) => group.label),
@@ -111,9 +146,45 @@ export function SetupDashboard() {
         throw new Error(`HTTP ${response.status}: ${text || response.statusText}`);
       }
 
-      await loadSnapshot();
+      await Promise.all([loadSnapshot(), loadConfig({ quiet: true })]);
     } catch (error) {
       setSnapshotError(error instanceof Error ? error.message : String(error));
+      setBusyAction("");
+    }
+  }
+
+  async function handleSaveConfig() {
+    setBusyAction("config-save");
+    setConfigFeedback(null);
+
+    try {
+      const response = await fetch("/setup/api/config/raw", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ content: configDraft }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      setConfigExists(true);
+      setConfigPath(payload?.path || configPath);
+      setConfigFeedback({
+        tone: "success",
+        message: "Config saved. The managed gateway will reload with the updated file.",
+      });
+      await Promise.all([loadSnapshot(), loadConfig({ quiet: true })]);
+    } catch (error) {
+      setConfigFeedback({
+        tone: "danger",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
       setBusyAction("");
     }
   }
@@ -184,6 +255,74 @@ export function SetupDashboard() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="overflow-hidden bg-panel/80">
+            <CardHeader className="border-b border-border/80 pb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-lg">Raw config editor</CardTitle>
+                  <CardDescription>
+                    Edit the active OpenClaw config file used by the wrapper. Saving writes a backup and applies the
+                    updated file through <code className="font-mono text-xs text-foreground">/setup/api/config/raw</code>.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={configExists ? "success" : "warning"}>{configExists ? "Config file found" : "Config file missing"}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void loadConfig()}
+                    disabled={Boolean(busyAction)}
+                  >
+                    {busyAction === "config-load" ? "Reloading..." : "Reload from disk"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => void handleSaveConfig()}
+                    disabled={Boolean(busyAction)}
+                  >
+                    {busyAction === "config-save" ? "Saving..." : "Save config"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              {configFeedback ? (
+                <div
+                  className={cn(
+                    "rounded-lg border px-4 py-3 text-sm text-foreground",
+                    configFeedback.tone === "danger" && "border-danger/60 bg-danger/10",
+                    configFeedback.tone === "success" && "border-emerald-500/40 bg-emerald-500/10",
+                    configFeedback.tone === "warning" && "border-amber-500/40 bg-amber-500/10",
+                  )}
+                >
+                  {configFeedback.message}
+                </div>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div className="rounded-lg border border-border/80 bg-background/60 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Config path</div>
+                  <div className="mt-2 break-all font-mono text-xs text-foreground">{configPath || "Loading..."}</div>
+                </div>
+                <div className="rounded-lg border border-border/80 bg-background/60 px-4 py-3 text-xs text-muted-foreground">
+                  JSON5 is supported.
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border/80 bg-background/70 shadow-panel">
+                <textarea
+                  value={configDraft}
+                  onChange={(event) => setConfigDraft(event.target.value)}
+                  spellCheck={false}
+                  className="min-h-[22rem] w-full resize-y bg-transparent px-4 py-4 font-mono text-xs text-foreground outline-none"
+                  placeholder={`{
+  gateway: {
+    bind: "loopback"
+  }
+}`}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="overflow-hidden bg-panel/80">
             <CardHeader className="border-b border-border/80 pb-4">
