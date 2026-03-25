@@ -1461,11 +1461,6 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
 
     // 1. Ensure the channel config entry exists (idempotent).
     const cfg = await ensureWhatsAppConfig(accountId, whatsappCtx);
-    if (cfg.existed) {
-      return res
-        .status(200)
-        .json({ ok: true, accountId, existed: true, changed: false });
-    }
 
     // 2. Provision the agent bound to this whatsapp account.
     await ensureAgent(accountId, whatsappCtx);
@@ -1477,7 +1472,7 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
 
     return res
       .status(200)
-      .json({ ok: true, accountId, existed: false, changed: true });
+      .json({ ok: true, accountId, existed: cfg.existed, changed: cfg.changed });
   } catch (err) {
     const status = err.status || 500;
     return res.status(status).json({
