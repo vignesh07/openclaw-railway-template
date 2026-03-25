@@ -1507,8 +1507,7 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       });
     }
 
-    const templateWorkspace =
-      "/data/state/agents/schedly-template/workspace";
+    const templateWorkspace = "/data/state/agents/schedly-template/workspace";
 
     await fs.promises.cp(templateWorkspace, workspace, {
       recursive: true,
@@ -1522,6 +1521,53 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
     return res.status(500).json({ ok: false, error: String(err) });
   }
 });
+
+app.post(
+  "/setup/api/whatsapp/accounts/debounce",
+  requireSetupAuth,
+  async (req, res) => {
+    try {
+      const accountId = String(req.body?.accountId || "").trim();
+      const debounceMsRaw = req.body?.debounceMs;
+
+      if (!accountId)
+        return res.status(400).json({ ok: false, error: "accountId required" });
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
+        return res.status(400).json({ ok: false, error: "invalid accountId" });
+      }
+
+      const debounceMs = Number(debounceMsRaw);
+      if (
+        !Number.isFinite(debounceMs) ||
+        debounceMs < 0 ||
+        debounceMs > 60_000
+      ) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "invalid debounceMs (0..60000)" });
+      }
+
+      const path = `channels.whatsapp.accounts.${accountId}.debounceMs`;
+
+      const r = await runCmd(
+        OPENCLAW_NODE,
+        clawArgs(["config", "set", path, String(debounceMs)]),
+      );
+
+      if (r.code !== 0) {
+        return res.status(500).json({
+          ok: false,
+          error: "config set failed",
+          output: redactSecrets(r.output),
+        });
+      }
+
+      return res.status(200).json({ ok: true, accountId, debounceMs });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  },
+);
 
 function asciiQrToPngBuffer(qrAscii, opts = {}) {
   const scale = Math.max(1, Number(opts.scale || 4));
@@ -1728,53 +1774,6 @@ app.post("/setup/api/whatsapp/qr", requireSetupAuth, async (req, res) => {
     });
   }
 });
-
-app.post(
-  "/setup/api/whatsapp/accounts/debounce",
-  requireSetupAuth,
-  async (req, res) => {
-    try {
-      const accountId = String(req.body?.accountId || "").trim();
-      const debounceMsRaw = req.body?.debounceMs;
-
-      if (!accountId)
-        return res.status(400).json({ ok: false, error: "accountId required" });
-      if (!/^[A-Za-z0-9_-]{1,64}$/.test(accountId)) {
-        return res.status(400).json({ ok: false, error: "invalid accountId" });
-      }
-
-      const debounceMs = Number(debounceMsRaw);
-      if (
-        !Number.isFinite(debounceMs) ||
-        debounceMs < 0 ||
-        debounceMs > 60_000
-      ) {
-        return res
-          .status(400)
-          .json({ ok: false, error: "invalid debounceMs (0..60000)" });
-      }
-
-      const path = `channels.whatsapp.accounts.${accountId}.debounceMs`;
-
-      const r = await runCmd(
-        OPENCLAW_NODE,
-        clawArgs(["config", "set", path, String(debounceMs)]),
-      );
-
-      if (r.code !== 0) {
-        return res.status(500).json({
-          ok: false,
-          error: "config set failed",
-          output: redactSecrets(r.output),
-        });
-      }
-
-      return res.status(200).json({ ok: true, accountId, debounceMs });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: String(err) });
-    }
-  },
-);
 
 app.get("/setup/api/whatsapp/status", requireSetupAuth, async (req, res) => {
   try {
