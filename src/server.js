@@ -9,6 +9,14 @@ import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 
+import {
+  ensureWhatsAppConfig,
+  ensureAgent,
+  ensureWorkspaceFromTemplate,
+  reloadGatewayIfNeeded,
+  getQrCode,
+} from "./whatsapp.js";
+
 // Migrate deprecated CLAWDBOT_* env vars → OPENCLAW_* so existing Railway deployments
 // keep working. Users should update their Railway Variables to use the new names.
 for (const suffix of [
@@ -1440,85 +1448,43 @@ app.post("/setup/api/whatsapp/accounts", requireSetupAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "invalid accountId" });
     }
 
-    const cfgPath = `channels.whatsapp.accounts.${accountId}`;
+    // Shared context injected into each isolated responsibility.
+    const whatsappCtx = {
+      runCmd,
+      clawArgs,
+      openclawNode: OPENCLAW_NODE,
+      redactSecrets,
+      agentBasePath: "/data/state/agents",
+      restartGateway,
+      generateWhatsappQrAscii,
+    };
 
-    // If exists, do nothing (idempotent)
-    const get = await runCmd(
-      OPENCLAW_NODE,
-      clawArgs(["config", "get", cfgPath]),
-    );
-    if (get.code === 0) {
+    // 1. Ensure the channel config entry exists (idempotent).
+    const cfg = await ensureWhatsAppConfig(accountId, whatsappCtx);
+    if (cfg.existed) {
       return res
         .status(200)
         .json({ ok: true, accountId, existed: true, changed: false });
     }
 
-    const configOptions = {
-      enabled: true,
-      dmPolicy: "allowlist",
-      allowFrom: ["*"],
-      groupPolicy: "disabled",
-      debounceMs: 0,
-    };
+    // 2. Provision the agent bound to this whatsapp account.
+    await ensureAgent(accountId, whatsappCtx);
 
-    const configSet = await runCmd(
-      OPENCLAW_NODE,
-      clawArgs([
-        "config",
-        "set",
-        "--json",
-        cfgPath,
-        JSON.stringify(configOptions),
-      ]),
-    );
-
-    if (configSet.code !== 0) {
-      return res.status(500).json({
-        ok: false,
-        error: "config set failed",
-        output: redactSecrets(configSet.output),
-      });
-    }
-
+    // 3. Seed the workspace from the shared template.
     const workspace = `/data/state/agents/${accountId}/workspace`;
-    const agentDir = `/data/state/agents/${accountId}/agent`;
-
-    const agentSet = await runCmd(
-      OPENCLAW_NODE,
-      clawArgs([
-        "agents",
-        "add",
-        accountId,
-        "--workspace",
-        workspace,
-        "--agent-dir",
-        agentDir,
-        "--non-interactive",
-        "--bind",
-        `whatsapp:${accountId}`,
-      ]),
-    );
-
-    if (agentSet.code !== 0) {
-      return res.status(500).json({
-        ok: false,
-        error: "agent add failed",
-        output: redactSecrets(agentSet.output),
-      });
-    }
-
     const templateWorkspace = "/data/state/agents/schedly-template/workspace";
-
-    await fs.promises.cp(templateWorkspace, workspace, {
-      recursive: true,
-      force: true,
-    });
+    await ensureWorkspaceFromTemplate(accountId, templateWorkspace, workspace);
 
     return res
       .status(200)
       .json({ ok: true, accountId, existed: false, changed: true });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
+    const status = err.status || 500;
+    return res.status(status).json({
+      ok: false,
+      error: err.message || String(err),
+      ...(err.output ? { output: err.output } : {}),
+    });
   }
 });
 
