@@ -1,0 +1,30 @@
+name: 域名状态定时监测
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天北京时间上午10点运行
+  workflow_dispatch: 
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检测域名并发送通知
+        run: |
+          # 你的域名列表
+          DOMAINS="://h2xv7hi1jh3.com ://i98sft5js9i.com"
+          REPORT="🌐 域名状态报告：%0A"
+
+          for domain in $DOMAINS; do
+            # 使用 -k 忽略证书错误，防止干扰
+            status=$(curl -Isk https://$domain --connect-timeout 5 | head -n 1)
+            if [[ $status == *"200"* || $status == *"301"* || $status == *"302"* ]]; then
+              REPORT="$REPORT ✅ $domain 正常%0A"
+            else
+              REPORT="$REPORT ❌ $domain 异常%0A"
+            fi
+          done
+
+          # 关键发送步骤：请确保这里的变量名与你在 Settings 里填的一致
+          curl -s -X POST "https://telegram.org{{ secrets.TELEGRAM_botTOKEN(8421439049:AAEjdiegOooNuh9mCjM2vGfUd0Ex1fMyPcM) }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID(8473419640) }}&text=$REPORT"
